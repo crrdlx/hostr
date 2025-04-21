@@ -1,0 +1,23 @@
+# Environment variables
+.env
+
+# Python bytecode files
+__pycache__/
+*.pyc
+
+# Node.js dependencies
+node_modules/
+package-lock.json
+
+# Logs and backups
+*.log
+*.bak
+
+# Editor temporary files
+*.swp
+*.swo
+*.tmp
+
+# OS-specific files
+.DS_Store
+Thumbs.db
