@@ -1,8 +1,9 @@
-// v0.0.1
+// v 0.0.1
 import 'dotenv/config';
 import { SimplePool, finalizeEvent, getPublicKey } from 'nostr-tools';
 import { Client, PrivateKey } from '@hiveio/dhive';
 import WebSocket from 'ws';
+import fs from 'fs';
 
 // Version constant (matches comment at top of file)
 const VERSION = '0.0.1';
@@ -45,6 +46,8 @@ let nostrToHiveQueue = [];
 let hiveToNostrQueue = [];
 let nostrToHivePosting = false;
 let hiveToNostrPosting = false;
+const PROCESSED_FILE = 'processed_permlinks.json';
+let processedHivePermlinks = new Set(fs.existsSync(PROCESSED_FILE) ? JSON.parse(fs.readFileSync(PROCESSED_FILE)) : []);
 
 // --- Nostr-to-Hive Functions ---
 
@@ -138,7 +141,7 @@ async function postToHive(content, eventId, tags) {
   const permlink = Math.random().toString(36).substring(2);
   const title = generateTitle(content, tags);
   const nostrLink = createNostrLink(eventId);
-  const body = `${content}\n\n---\n\n*This long-form article originated on [Nostr](${nostrLink})*\n\n*Cross-posted using [Hostr](https://github.com/crrdlx/hostr), version ${VERSION}*`;
+  const body = `${content}\n\n---\n\n*This long-form article originated on [Nostr](${nostrLink})*\n\nCross-posted using [Hostr](https://github.com/crrdlx/hostr), version ${VERSION}`;
   const jsonMetadata = JSON.stringify({ 
     tags: ['nostr', 'hive', 'article'], 
     app: 'hostr-longform30023/1.0' 
@@ -248,9 +251,11 @@ async function processHiveToNostrQueue() {
 
   try {
     await postToNostr(post);
+    processedHivePermlinks.add(post.permlink);
+    fs.writeFileSync(PROCESSED_FILE, JSON.stringify([...processedHivePermlinks]));
     console.log(`[Hive→Nostr] 📊 Queue status: ${hiveToNostrQueue.length} items remaining`);
   } catch (error) {
-    console.error('[Hive→Nostr] ❌ Error processing post:', Ferror.message);
+    console.error('[Hive→Nostr] ❌ Error processing post:', error.message);
     hiveToNostrQueue.unshift(post);
     setTimeout(processHiveToNostrQueue, TWO_MINUTES_MS);
   } finally {
@@ -267,6 +272,11 @@ function queueHiveToNostr(post) {
   const bodyLower = post.body.toLowerCase();
   if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr')) {
     console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated post: "${post.title}" (Permlink: ${post.permlink})`);
+    return;
+  }
+  // Skip already processed posts
+  if (processedHivePermlinks.has(post.permlink)) {
+    console.log(`[Hive→Nostr] ⏭️ Skipping already processed post: "${post.title}" (Permlink: ${post.permlink})`);
     return;
   }
   const content = `${post.title}\n\n${post.body}\n\n---\n\nOriginally posted on Hive at ${createHiveLink(post.permlink)}\n\nCross-posted using [Hostr](https://github.com/crrdlx/hostr), version ${VERSION}`;
