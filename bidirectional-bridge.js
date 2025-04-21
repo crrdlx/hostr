@@ -191,7 +191,6 @@ async function listenToNostr() {
   for (const relay of relays) {
     try {
       await pool.ensureRelay(relay);
-      console.log(`[Nostr→Hive] 🔌|(
       console.log(`[Nostr→Hive] 🔌 Connected to relay: ${relay}`);
     } catch (err) {
       console.error(`[Nostr→Hive] ❌ Failed to connect to relay ${relay}: ${err.message}`);

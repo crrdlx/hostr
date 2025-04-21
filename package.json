@@ -1,14 +1,14 @@
 {
-    "name": "hostr",
-    "version": "0.0.1",
-    "type": "module",
-    "dependencies": {
-      "@hiveio/dhive": "^1.2.7",
-      "dotenv": "^16.4.5",
-      "nostr-tools": "^2.7.2",
-      "ws": "^8.18.0"
-    },
-    "imports": {
-      "fs": "node:fs"
-    }
+  "name": "hostr",
+  "version": "0.0.1",
+  "type": "module",
+  "dependencies": {
+    "@hiveio/dhive": "^1.2.7",
+    "dotenv": "^16.4.5",
+    "nostr-tools": "^2.7.2",
+    "ws": "^8.18.0"
+  },
+  "imports": {
+    "fs": "node:fs"
   }
+}
