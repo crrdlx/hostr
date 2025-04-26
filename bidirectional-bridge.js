@@ -1,4 +1,4 @@
-// v 0.0.2
+// v 0.0.3
 import 'dotenv/config';
 import { SimplePool, finalizeEvent, getPublicKey } from 'nostr-tools';
 import { Client, PrivateKey } from '@hiveio/dhive';
@@ -6,7 +6,7 @@ import WebSocket from 'ws';
 import fs from 'fs';
 
 // Version constant (matches comment at top of file)
-const VERSION = '0.0.2';
+const VERSION = '0.0.3';
 
 // Explicitly set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -249,7 +249,7 @@ function isRecentPost(post) {
   if (!isRecent) {
     const minutes = Math.floor(age / 60000);
     const seconds = Math.floor((age % 60000) / 1000);
-    console.log(`[Hive→Nostr] ⏭️ Skipping old post (${minutes}m ${seconds}s old): "${post.title}"`);
+    console.log(`[Hive→Nostr] ⏭️ Skipping old note (${minutes}m ${seconds}s old): "${post.title}"`);
   }
   return isRecent;
 }
@@ -274,7 +274,7 @@ async function processHiveToNostrQueue() {
     fs.writeFileSync(PROCESSED_FILE, JSON.stringify([...processedHivePermlinks]));
     console.log(`[Hive→Nostr] 📊 Queue status: ${hiveToNostrQueue.length} items remaining`);
   } catch (error) {
-    console.error('[Hive→Nostr] ❌ Error processing post:', error.message);
+    console.error('[Hive→Nostr] ❌ Error processing note:', error.message);
     hiveToNostrQueue.unshift(post);
     setTimeout(processHiveToNostrQueue, TWO_MINUTES_MS);
   } finally {
@@ -287,24 +287,24 @@ async function processHiveToNostrQueue() {
 
 // Queue Hive-to-Nostr post
 function queueHiveToNostr(post) {
-  // Prevent loop by skipping Nostr-originated or truncated posts
+  // Prevent loop by skipping Nostr-originated or truncated notes
   const bodyLower = post.body.toLowerCase();
-  if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr') || bodyLower.includes('read full post below')) {
-    console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated or truncated post: "${post.title}" (Permlink: ${post.permlink})`);
+  if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr') || bodyLower.includes('read full note below')) {
+    console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated or truncated note: "${post.title}" (Permlink: ${post.permlink})`);
     return;
   }
   // Skip already processed posts
   if (processedHivePermlinks.has(post.permlink)) {
-    console.log(`[Hive→Nostr] ⏭️ Skipping already processed post: "${post.title}" (Permlink: ${post.permlink})`);
+    console.log(`[Hive→Nostr] ⏭️ Skipping already processed note: "${post.title}" (Permlink: ${post.permlink})`);
     return;
   }
-  console.log(`[Hive→Nostr] ℹ️ Post body length: ${post.body.length} chars`);
+  console.log(`[Hive→Nostr] ℹ️ Note body length: ${post.body.length} chars`);
   let content = `${post.title}\n\n${post.body}`;
   const hiveLink = createHiveLink(post.permlink);
   const footer = `\n\nCross-posted using Hostr (https://github.com/crrdlx/hostr), version ${VERSION}`;
   if (content.length > 280) {
     console.log(`[Hive→Nostr] ✂️ Truncating content from ${content.length} to 280 chars`);
-    const suffix = `... read full post below:\n${hiveLink}`;
+    const suffix = `... read full note below:\n${hiveLink}`;
     content = content.substring(0, 280 - (suffix.length + footer.length)) + suffix;
   } else {
     content += `\n\nOriginally posted on Hive at ${hiveLink}`;
@@ -317,7 +317,7 @@ function queueHiveToNostr(post) {
     console.log(`[Hive→Nostr] 📊 Queue status: ${hiveToNostrQueue.length} items waiting`);
     processHiveToNostrQueue();
   } else {
-    console.log(`[Hive→Nostr] ⏭️ Skipping duplicate post: "${post.title}"`);
+    console.log(`[Hive→Nostr] ⏭️ Skipping duplicate note: "${post.title}"`);
   }
 }
 
@@ -352,7 +352,7 @@ async function postToNostr(post) {
 // Poll Hive for new posts
 async function pollHive() {
   try {
-    console.log('[Hive→Nostr] 🔍 Checking for new Hive posts...');
+    console.log('[Hive→Nostr] 🔍 Checking for new Hive notes...');
     const posts = await fetchRecentHivePosts();
     const sortedPosts = [...posts].sort((a, b) => 
       new Date(a.created + 'Z').getTime() - new Date(b.created + 'Z').getTime()
@@ -361,24 +361,24 @@ async function pollHive() {
 
     for (const post of sortedPosts) {
       if (post.author !== HIVE_USERNAME) {
-        console.log(`[Hive→Nostr] ⏭️ Skipping post from ${post.author} (not ${HIVE_USERNAME})`);
+        console.log(`[Hive→Nostr] ⏭️ Skipping note from ${post.author} (not ${HIVE_USERNAME})`);
         continue;
       }
       // Enhanced loop prevention
       const bodyLower = post.body.toLowerCase();
-      if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr') || bodyLower.includes('read full post below')) {
-        console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated or truncated post: "${post.title}" (Permlink: ${post.permlink})`);
+      if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr') || bodyLower.includes('read full note below')) {
+        console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated or truncated note: "${post.title}" (Permlink: ${post.permlink})`);
         continue;
       }
       if (isRecentPost(post)) {
-        console.log(`[Hive→Nostr] 📝 Found recent Hive post: "${post.title}"`);
+        console.log(`[Hive→Nostr] 📝 Found recent Hive note: "${post.title}"`);
         queueHiveToNostr(post);
         newPostsFound++;
       }
     }
 
     if (newPostsFound === 0) {
-      console.log('[Hive→Nostr] 📭 No new posts found');
+      console.log('[Hive→Nostr] 📭 No new notes found');
     }
   } catch (error) {
     console.error('[Hive→Nostr] ❌ Error polling Hive:', error.message);
