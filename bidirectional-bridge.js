@@ -1,4 +1,4 @@
-// v 0.0.3
+// v 0.0.4
 import 'dotenv/config';
 import { SimplePool, finalizeEvent, getPublicKey } from 'nostr-tools';
 import { Client, PrivateKey } from '@hiveio/dhive';
@@ -6,7 +6,7 @@ import WebSocket from 'ws';
 import fs from 'fs';
 
 // Version constant (matches comment at top of file)
-const VERSION = '0.0.3';
+const VERSION = '0.0.4';
 
 // Explicitly set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -141,7 +141,7 @@ async function processNostrToHiveQueue() {
 
 // Queue Nostr-to-Hive post
 function queueNostrToHive(event) {
-  if (event.content.includes('Originally posted on Hive at https://hive.blog')) {
+  if (event.content.includes('Automated cross-post from Hive by Hostr')) {
     console.log(`[Nostr→Hive] ⏭️ Skipping Hive-originated note: "${event.content.substring(0, 30)}..."`);
     return;
   }
@@ -162,7 +162,7 @@ async function postToHive(content, eventId, kind, tags) {
   const permlink = Math.random().toString(36).substring(2);
   const title = generateTitle(content, kind, tags);
   const nostrLink = createNostrLink(eventId);
-  const body = `${content}\n\n---\n\n*This ${kind === 30023 ? 'article' : 'note'} originated on [Nostr](${nostrLink})*\n\nCross-posted using [Hostr](https://github.com/crrdlx/hostr), version ${VERSION}`;
+  const body = `${content}\n\n---\n\n*This ${kind === 30023 ? 'article' : 'note'} originated on [Nostr](${nostrLink})*\n\nAutomated cross-post by Hostr (https://github.com/crrdlx/hostr), version ${VERSION}`;
   const jsonMetadata = JSON.stringify({ 
     tags: ['nostr', 'hive', kind === 30023 ? 'article' : 'note'], 
     app: 'hostr/1.0' 
@@ -301,8 +301,9 @@ function queueHiveToNostr(post) {
   console.log(`[Hive→Nostr] ℹ️ Note body length: ${post.body.length} chars`);
   let content = `${post.title}\n\n${post.body}`;
   const hiveLink = createHiveLink(post.permlink);
-  const footer = `\n\nCross-posted using Hostr (https://github.com/crrdlx/hostr), version ${VERSION}`;
-  if (content.length > 280) {
+  const footer = `\n\nAutomated cross-post from Hive by Hostr (https://github.com/crrdlx/hostr), version ${VERSION}`;
+  const isTruncated = content.length > 280;
+  if (isTruncated) {
     console.log(`[Hive→Nostr] ✂️ Truncating content from ${content.length} to 280 chars`);
     const suffix = `... read full note below:\n${hiveLink}`;
     content = content.substring(0, 280 - (suffix.length + footer.length)) + suffix;
@@ -310,7 +311,7 @@ function queueHiveToNostr(post) {
     content += `\n\nOriginally posted on Hive at ${hiveLink}`;
   }
   content += footer;
-  const postData = { content, permlink: post.permlink };
+  const postData = { content, permlink: post.permlink, isTruncated };
   if (!hiveToNostrQueue.some(item => item.permlink === post.permlink)) {
     hiveToNostrQueue.push(postData);
     console.log(`[Hive→Nostr] 📥 Added to queue: "${post.title}" (Permlink: ${post.permlink})`);
@@ -324,16 +325,22 @@ function queueHiveToNostr(post) {
 // Post to Nostr
 async function postToNostr(post) {
   console.log(`[Hive→Nostr] 📤 Attempting to post to Nostr: "${post.content.substring(0, 30)}..."`);
+  // Note: Future enhancement could use NIP-19 to store Hive post as a custom kind (e.g., 10001)
+  // and post a kind 1 event with a nostr:nevent1 link to it, per hzrd149's advice.
+  const tags = [
+    ['t', 'story'],
+    ['t', 'hostr'],
+    ['t', 'nostr'],
+    ['t', 'note'],
+    ['r', createHiveLink(post.permlink)],
+  ];
+  if (post.isTruncated) {
+    tags.push(['e', post.permlink, 'hive']);
+  }
   const event = {
     kind: 1,
     created_at: Math.floor(Date.now() / 1000),
-    tags: [
-      ['t', 'story'],
-      ['t', 'hostr'],
-      ['t', 'nostr'],
-      ['t', 'note'],
-      ['r', createHiveLink(post.permlink)],
-    ],
+    tags,
     content: post.content,
     pubkey: getPublicKey(NOSTR_PRIVATE_KEY),
   };
