@@ -1,12 +1,12 @@
-// v 0.0.1
+// v 0.0.4
 import 'dotenv/config';
-import { SimplePool, finalizeEvent, getPublicKey } from 'nostr-tools';
+import { SimplePool, finalizeEvent, getPublicKey, nip19 } from 'nostr-tools';
 import { Client, PrivateKey } from '@hiveio/dhive';
 import WebSocket from 'ws';
 import fs from 'fs';
 
 // Version constant (matches comment at top of file)
-const VERSION = '0.0.1';
+const VERSION = '0.0.4';
 
 // Explicitly set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -35,6 +35,12 @@ const relays = [
   'wss://nos.lol',
   'wss://nostr-pub.wellorder.net',
   'wss://offchain.pub',
+  'wss://relay.snort.social', // Yakihonne/Habla
+  'wss://relay.primal.net', // Yakihonne/Habla
+  'wss://nostr.oxtr.dev', // Yakihonne/Habla
+  'wss://nostr-relay.wlvs.space', // Yakihonne
+  'wss://nostr.yakihonne.com', // Yakihonne-specific
+  'wss://relay.current.fyi', // Broader propagation
 ];
 const pool = new SimplePool();
 
@@ -163,6 +169,7 @@ async function postToHive(content, eventId, tags) {
       PrivateKey.fromString(HIVE_POSTING_KEY)
     );
     console.log(`[Nostr→Hive] ✅ Posted to Hive: ${result.id}, Title: "${title}"`);
+    fs.writeFileSync(PROCESSED_FILE, JSON.stringify([...processedHivePermlinks]));
     return result;
   } catch (error) {
     console.error('[Nostr→Hive] ❌ Error posting to Hive:', error.message);
@@ -213,7 +220,12 @@ async function fetchRecentHivePosts() {
       limit: 10,
       truncate_body: 0,
     };
+    console.log(`[Hive→Nostr] 🔍 Fetching posts with query: ${JSON.stringify(query)}`);
     const posts = await hiveClient.database.getDiscussions('blog', query);
+    console.log(`[Hive→Nostr] 📋 Fetched ${posts.length} posts from Hive API`);
+    posts.forEach(post => {
+      console.log(`[Hive→Nostr] 📋 Post: author=${post.author}, permlink=${post.permlink}, title="${post.title}", parent_author=${post.parent_author || ''}, created=${post.created}`);
+    });
     return posts;
   } catch (error) {
     console.error('[Hive→Nostr] ❌ Error fetching Hive posts:', error.message);
@@ -230,7 +242,7 @@ function isRecentPost(post) {
   if (!isRecent) {
     const minutes = Math.floor(age / 60000);
     const seconds = Math.floor((age % 60000) / 1000);
-    console.log(`[Hive→Nostr] ⏭️ Skipping old post (${minutes}m ${seconds}s old): "${post.title}"`);
+    console.log(`[Hive→Nostr] ⏭️ Skipping old post (${minutes}m ${seconds}s old, created ${post.created} UTC): "${post.title}"`);
   }
   return isRecent;
 }
@@ -238,6 +250,85 @@ function isRecentPost(post) {
 // Create Hive post link
 function createHiveLink(permlink) {
   return `https://hive.blog/@${HIVE_USERNAME}/${permlink}`;
+}
+
+// Fetch Nostr event by ID with retry
+async function fetchNostrEvent(eventId, retries = 5, timeoutMs = 45000) {
+  console.log(`[Hive→Nostr] 🔍 Fetching Nostr event: id=${eventId}, retries left=${retries}`);
+  const now = Math.floor(Date.now() / 1000);
+  const since = now - (7 * 24 * 60 * 60); // Look back 7 days
+  const primaryFilter = { ids: [eventId], since };
+  const fallbackFilter = { kinds: [1, 30023], authors: [NOSTR_PUBLIC_KEY], since };
+
+  // Ensure relay connections
+  for (const relay of relays) {
+    try {
+      await pool.ensureRelay(relay);
+      console.log(`[Hive→Nostr] 🔌 Reconnected to relay for fetch: ${relay}`);
+    } catch (err) {
+      console.error(`[Hive→Nostr] ⚠️ Failed to reconnect to relay ${relay}: ${err.message}`);
+    }
+  }
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      // Try primary filter
+      console.log(`[Hive→Nostr] ℹ️ Trying primary filter: ${JSON.stringify(primaryFilter)}`);
+      const event = await pool.get(relays, primaryFilter, { timeout: timeoutMs });
+      if (event) {
+        console.log(`[Hive→Nostr] 📝 Fetched event JSON: ${JSON.stringify(event, null, 2)}`);
+        // Log relays where event was found
+        for (const relay of relays) {
+          try {
+            const relayEvent = await pool.get([relay], primaryFilter, { timeout: timeoutMs / 2 });
+            if (relayEvent) {
+              console.log(`[Hive→Nostr] ✅ Event found on relay: ${relay}`);
+            }
+          } catch (error) {
+            console.log(`[Hive→Nostr] ⚠️ Event not found on relay ${relay}: ${error.message}`);
+          }
+        }
+        return event;
+      } else {
+        console.log(`[Hive→Nostr] ⚠️ No event found for id=${eventId} with primary filter on attempt ${attempt}`);
+      }
+    } catch (error) {
+      console.error(`[Hive→Nostr] ❌ Error fetching event on attempt ${attempt} with primary filter: ${error.message}`);
+    }
+
+    // Try fallback filter on last attempt
+    if (attempt === retries) {
+      try {
+        console.log(`[Hive→Nostr] ℹ️ Trying fallback filter: ${JSON.stringify(fallbackFilter)}`);
+        const event = await pool.get(relays, fallbackFilter, { timeout: timeoutMs });
+        if (event && event.id === eventId) {
+          console.log(`[Hive→Nostr] 📝 Fetched event JSON via fallback: ${JSON.stringify(event, null, 2)}`);
+          for (const relay of relays) {
+            try {
+              const relayEvent = await pool.get([relay], fallbackFilter, { timeout: timeoutMs / 2 });
+              if (relayEvent && relayEvent.id === eventId) {
+                console.log(`[Hive→Nostr] ✅ Event found on relay: ${relay}`);
+              }
+            } catch (error) {
+              console.log(`[Hive→Nostr] ⚠️ Event not found on relay ${relay}: ${error.message}`);
+            }
+          }
+          return event;
+        } else {
+          console.log(`[Hive→Nostr] ⚠️ No matching event found for id=${eventId} with fallback filter`);
+        }
+      } catch (error) {
+        console.error(`[Hive→Nostr] ❌ Error fetching event with fallback filter: ${error.message}`);
+      }
+    }
+
+    if (attempt < retries) {
+      console.log(`[Hive→Nostr] ⏳ Retrying fetch in 3s...`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+  }
+  console.log(`[Hive→Nostr] ⚠️ Failed to fetch event id=${eventId} after ${retries} attempts`);
+  return null;
 }
 
 // Process Hive-to-Nostr queue
@@ -250,10 +341,16 @@ async function processHiveToNostrQueue() {
   const post = hiveToNostrQueue.shift();
 
   try {
-    await postToNostr(post);
+    const signedEvent = await postToNostr(post);
     processedHivePermlinks.add(post.permlink);
     fs.writeFileSync(PROCESSED_FILE, JSON.stringify([...processedHivePermlinks]));
     console.log(`[Hive→Nostr] 📊 Queue status: ${hiveToNostrQueue.length} items remaining`);
+    // Fetch the published event for debugging (non-blocking)
+    try {
+      await fetchNostrEvent(signedEvent.id);
+    } catch (error) {
+      console.error(`[Hive→Nostr] ⚠️ Failed to fetch event ${signedEvent.id} for verification: ${error.message}`);
+    }
   } catch (error) {
     console.error('[Hive→Nostr] ❌ Error processing post:', error.message);
     hiveToNostrQueue.unshift(post);
@@ -279,8 +376,10 @@ function queueHiveToNostr(post) {
     console.log(`[Hive→Nostr] ⏭️ Skipping already processed post: "${post.title}" (Permlink: ${post.permlink})`);
     return;
   }
-  const content = `${post.title}\n\n${post.body}\n\n---\n\nOriginally posted on Hive at ${createHiveLink(post.permlink)}\n\nCross-posted using [Hostr](https://github.com/crrdlx/hostr), version ${VERSION}`;
-  const postData = { content, permlink: post.permlink };
+  console.log(`[Hive→Nostr] ℹ️ Post body length: ${post.body.length} chars`);
+  const summary = post.body.substring(0, 60).replace(/\n+/g, ' ').trim().substring(0, 60); // Strict 60 chars
+  const content = `# ${post.title}\n\n${post.body}\n\n---\n\nOriginally posted on Hive at ${createHiveLink(post.permlink)}\n\nCross-posted using [Hostr](https://github.com/crrdlx/hostr), version ${VERSION}`;
+  const postData = { content, permlink: post.permlink, title: post.title, summary };
   if (!hiveToNostrQueue.some(item => item.permlink === post.permlink)) {
     hiveToNostrQueue.push(postData);
     console.log(`[Hive→Nostr] 📥 Added to queue: "${post.title}" (Permlink: ${post.permlink})`);
@@ -294,18 +393,69 @@ function queueHiveToNostr(post) {
 // Post to Nostr
 async function postToNostr(post) {
   console.log(`[Hive→Nostr] 📤 Attempting to post to Nostr: "${post.content.substring(0, 30)}..."`);
+  const isLongPost = post.content.length > 280;
+  const eventKind = isLongPost ? 30023 : 1;
+  const createdAt = Math.floor(Date.now() / 1000);
+  // Parse JSON metadata if available
+  let hiveTags = ['story', 'hostr', 'nostr', 'article'];
+  try {
+    if (post.json_metadata) {
+      const metadata = typeof post.json_metadata === 'string' ? JSON.parse(post.json_metadata) : post.json_metadata;
+      if (metadata.tags && Array.isArray(metadata.tags)) {
+        hiveTags = [...new Set([...hiveTags, ...metadata.tags])];
+      }
+    }
+  } catch (error) {
+    console.error(`[Hive→Nostr] ⚠️ Error parsing JSON metadata: ${error.message}`);
+  }
+  const tags = eventKind === 30023 ? [
+    ['title', post.title],
+    ['summary', post.summary],
+    ['client', `hostr-longform30023/${VERSION}`],
+    ['published_at', createdAt.toString()],
+    ['d', `hive:${HIVE_USERNAME}:${post.permlink}`],
+    ['alt', `Long-form article: ${post.title} by ${HIVE_USERNAME}`],
+    ['r', createHiveLink(post.permlink)],
+    ...hiveTags.map(tag => ['t', tag]),
+  ] : [
+    ['client', `hostr-longform30023/${VERSION}`],
+    ['r', createHiveLink(post.permlink)],
+    ...hiveTags.map(tag => ['t', tag]),
+  ];
+
+  console.log(`[Hive→Nostr] ℹ️ Posting as kind=${eventKind} (length=${post.content.length})`);
+  console.log(`[Hive→Nostr] ℹ️ Tags: ${JSON.stringify(tags)}`);
+  console.log(`[Hive→Nostr] ℹ️ Content preview: "${post.content.substring(0, 100)}..."`);
+
   const event = {
-    kind: 1,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [],
+    kind: eventKind,
+    created_at: createdAt,
+    tags,
     content: post.content,
     pubkey: getPublicKey(NOSTR_PRIVATE_KEY),
   };
 
+  console.log(`[Hive→Nostr] 📝 Unsigned Event JSON: ${JSON.stringify(event, null, 2)}`);
+
   try {
     const signedEvent = finalizeEvent(event, Buffer.from(NOSTR_PRIVATE_KEY, 'hex'));
-    await Promise.any(pool.publish(relays, signedEvent));
-    console.log(`[Hive→Nostr] ✅ Published to Nostr, event ID: ${signedEvent.id}`);
+    console.log(`[Hive→Nostr] 📝 Signed Event JSON: ${JSON.stringify(signedEvent, null, 2)}`);
+    const nevent = nip19.neventEncode({ id: signedEvent.id, relays, author: signedEvent.pubkey });
+    console.log(`[Hive→Nostr] 📝 Nevent: ${nevent}`);
+    const successfulRelays = [];
+    for (const relay of relays) {
+      try {
+        await pool.publish([relay], signedEvent);
+        successfulRelays.push(relay);
+        console.log(`[Hive→Nostr] ✅ Published to relay: ${relay}`);
+      } catch (error) {
+        console.error(`[Hive→Nostr] ⚠️ Failed to publish to relay ${relay}: ${error.message}`);
+      }
+    }
+    if (successfulRelays.length === 0) {
+      throw new Error('Failed to publish to any relays');
+    }
+    console.log(`[Hive→Nostr] ✅ Published to Nostr, event ID: ${signedEvent.id}, kind=${eventKind}, relays: ${successfulRelays.join(', ')}`);
     return signedEvent;
   } catch (error) {
     console.error('[Hive→Nostr] ❌ Error posting to Nostr:', error.message);
@@ -359,6 +509,7 @@ function keepAlive() {
 
 // Initialization
 async function start() {
+  console.log(`[Bridge] ℹ️ Loaded environment: HIVE_USERNAME=${HIVE_USERNAME}, NOSTR_PUBLIC_KEY=${NOSTR_PUBLIC_KEY}`);
   for (const relay of relays) {
     try {
       await pool.ensureRelay(relay);
@@ -370,6 +521,11 @@ async function start() {
   console.log('[Bridge] 🎧 Starting longform30023 bidirectional bridge...');
   await listenToNostr();
   await pollHive();
+  // Fetch existing events for debugging
+  await fetchNostrEvent('74522852adc66725e21f0a5890472672ba343a3ac8'); // Bird story 3
+  await fetchNostrEvent('a25ee8579eeb67a84dc9950db17e2eb309fc26329af2cba8e4f73e8aa70758f6'); // Bird Story 4
+  await fetchNostrEvent('7ee41426033f3979ebe992842baa4dcad44e74e5ee625b5ce543e54cde9d4f37'); // Panda Story 1
+  await fetchNostrEvent('40d3563239a277b45050cac711640265094eb1c5815c8de20da798a76c10a425'); // Red Panda Story Test 13
   keepAlive();
 }
 

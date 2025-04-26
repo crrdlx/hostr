@@ -1,4 +1,4 @@
-// v 0.0.1
+// v 0.0.2
 import 'dotenv/config';
 import { SimplePool, finalizeEvent, getPublicKey } from 'nostr-tools';
 import { Client, PrivateKey } from '@hiveio/dhive';
@@ -6,7 +6,7 @@ import WebSocket from 'ws';
 import fs from 'fs';
 
 // Version constant (matches comment at top of file)
-const VERSION = '0.0.1';
+const VERSION = '0.0.2';
 
 // Explicitly set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -35,6 +35,12 @@ const relays = [
   'wss://nostr.wine',
   'wss://purplepag.es',
   'wss://relay.nostr.band', // Added for kind 30023 reliability
+  'wss://relay.snort.social', // Yakihonne/Habla
+  'wss://relay.primal.net', // Yakihonne/Habla
+  'wss://nostr.oxtr.dev', // Yakihonne/Habla
+  'wss://nostr-relay.wlvs.space', // Yakihonne
+  'wss://nostr.yakihonne.com', // Yakihonne-specific
+  'wss://relay.current.fyi', // Broader propagation
 ];
 const pool = new SimplePool();
 
@@ -224,7 +230,9 @@ async function fetchRecentHivePosts() {
       limit: 10,
       truncate_body: 0,
     };
+    console.log(`[Hive→Nostr] 🔍 Fetching posts with query: ${JSON.stringify(query)}`);
     const posts = await hiveClient.database.getDiscussions('blog', query);
+    console.log(`[Hive→Nostr] 📋 Fetched ${posts.length} posts from Hive API`);
     return posts;
   } catch (error) {
     console.error('[Hive→Nostr] ❌ Error fetching Hive posts:', error.message);
@@ -279,10 +287,10 @@ async function processHiveToNostrQueue() {
 
 // Queue Hive-to-Nostr post
 function queueHiveToNostr(post) {
-  // Prevent loop by skipping Nostr-originated posts
+  // Prevent loop by skipping Nostr-originated or truncated posts
   const bodyLower = post.body.toLowerCase();
-  if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr')) {
-    console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated post: "${post.title}" (Permlink: ${post.permlink})`);
+  if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr') || bodyLower.includes('read full post below')) {
+    console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated or truncated post: "${post.title}" (Permlink: ${post.permlink})`);
     return;
   }
   // Skip already processed posts
@@ -290,7 +298,18 @@ function queueHiveToNostr(post) {
     console.log(`[Hive→Nostr] ⏭️ Skipping already processed post: "${post.title}" (Permlink: ${post.permlink})`);
     return;
   }
-  const content = `${post.title}\n\n${post.body}\n\n---\n\nOriginally posted on Hive at ${createHiveLink(post.permlink)}\n\nCross-posted using [Hostr](https://github.com/crrdlx/hostr), version ${VERSION}`;
+  console.log(`[Hive→Nostr] ℹ️ Post body length: ${post.body.length} chars`);
+  let content = `${post.title}\n\n${post.body}`;
+  const hiveLink = createHiveLink(post.permlink);
+  const footer = `\n\nCross-posted using Hostr (https://github.com/crrdlx/hostr), version ${VERSION}`;
+  if (content.length > 280) {
+    console.log(`[Hive→Nostr] ✂️ Truncating content from ${content.length} to 280 chars`);
+    const suffix = `... read full post below:\n${hiveLink}`;
+    content = content.substring(0, 280 - (suffix.length + footer.length)) + suffix;
+  } else {
+    content += `\n\nOriginally posted on Hive at ${hiveLink}`;
+  }
+  content += footer;
   const postData = { content, permlink: post.permlink };
   if (!hiveToNostrQueue.some(item => item.permlink === post.permlink)) {
     hiveToNostrQueue.push(postData);
@@ -308,7 +327,13 @@ async function postToNostr(post) {
   const event = {
     kind: 1,
     created_at: Math.floor(Date.now() / 1000),
-    tags: [],
+    tags: [
+      ['t', 'story'],
+      ['t', 'hostr'],
+      ['t', 'nostr'],
+      ['t', 'note'],
+      ['r', createHiveLink(post.permlink)],
+    ],
     content: post.content,
     pubkey: getPublicKey(NOSTR_PRIVATE_KEY),
   };
@@ -316,7 +341,7 @@ async function postToNostr(post) {
   try {
     const signedEvent = finalizeEvent(event, Buffer.from(NOSTR_PRIVATE_KEY, 'hex'));
     await Promise.any(pool.publish(relays, signedEvent));
-    console.log(`[Hive→Nostr] ✅ Published to Nostr, event ID: ${signedEvent.id}`);
+    console.log(`[Hive→Nostr] ✅ Published to Nostr, event ID: ${signedEvent.id}, kind=1`);
     return signedEvent;
   } catch (error) {
     console.error('[Hive→Nostr] ❌ Error posting to Nostr:', error.message);
@@ -341,8 +366,8 @@ async function pollHive() {
       }
       // Enhanced loop prevention
       const bodyLower = post.body.toLowerCase();
-      if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr')) {
-        console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated post: "${post.title}" (Permlink: ${post.permlink})`);
+      if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr') || bodyLower.includes('read full post below')) {
+        console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated or truncated post: "${post.title}" (Permlink: ${post.permlink})`);
         continue;
       }
       if (isRecentPost(post)) {
@@ -370,6 +395,7 @@ function keepAlive() {
 
 // Initialization
 async function start() {
+  console.log(`[Bridge] ℹ️ Loaded environment: HIVE_USERNAME=${HIVE_USERNAME}, NOSTR_PUBLIC_KEY=${NOSTR_PUBLIC_KEY}`);
   for (const relay of relays) {
     try {
       await pool.ensureRelay(relay);
