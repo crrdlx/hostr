@@ -1,4 +1,5 @@
 // v 0.0.4
+CURRENTLY INACTIVE...USE THE LONGFORM30023.JS SCRIPT
 import 'dotenv/config';
 import { SimplePool, finalizeEvent, getPublicKey } from 'nostr-tools';
 import { Client, PrivateKey } from '@hiveio/dhive';
