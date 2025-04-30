@@ -1,6 +1,6 @@
 // v 0.0.19
 // Nostr-to-Hive: listens for kind 1 (short form) and kind 30023 (long form) then posts to Hive.
-// Hive-to-Nostr: listens for a Hive post, posts as kind 1 on Nostr, truncating at 280 characters with a link to Hive if needed.
+// Hive-to-Nostr: listens for a Hive post, posts as kind 1 on Nostr, truncating at 280 characters with a link back to original Hive post.
 import 'dotenv/config';
 import { SimplePool, finalizeEvent, getPublicKey } from 'nostr-tools';
 import { Client, PrivateKey } from '@hiveio/dhive';
