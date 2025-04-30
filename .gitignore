@@ -1,5 +1,6 @@
 # Environment variables
 .env
+archive
 
 # Python bytecode files
 __pycache__/
