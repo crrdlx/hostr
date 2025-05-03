@@ -1,6 +1,6 @@
 // v 0.0.19
 // Nostr-to-Hive: listens for kind 1 (short form) and kind 30023 (long form) then posts to Hive.
-// Hive-to-Nostr: listens for a Hive post, posts as kind 1 on Nostr, truncating at 280 characters with a link back to original Hive post.
+// Hive-to-Nostr: listens for a Hive post, posts as kind 1 on Nostr, truncating at 380 characters with a link back to original Hive post.
 import 'dotenv/config';
 import { SimplePool, finalizeEvent, getPublicKey } from 'nostr-tools';
 import { Client, PrivateKey } from '@hiveio/dhive';
@@ -166,7 +166,7 @@ function queueNostrToHive(event) {
     console.log(`[Nostr→Hive] ⏭️ Skipping already processed event: kind=${event.kind}, id=${event.id}, age=${Math.floor(age/60)}m${age%60}s, content="${event.content.substring(0, 30)}..."`);
     return;
   }
-  if (event.content.includes('Automated cross-post from Hive by Hostr')) {
+  if (event.content.includes('Auto cross-post from Hive via Hostr')) {
     console.log(`[Nostr→Hive] ⏭️ Skipping Hive-originated event: kind=${event.kind}, id=${event.id}, content="${event.content.substring(0, 30)}..."`);
     return;
   }
@@ -189,9 +189,9 @@ async function postToHive(content, eventId, tags, kind) {
   const permlink = Math.random().toString(36).substring(2);
   const title = generateTitle(content, tags);
   const nostrLink = createNostrLink(eventId);
-  const body = `${content}\n\n---\n\n*This article originated on [Nostr](${nostrLink})*\n\nAutomated cross-post by Hostr (https://github.com/crrdlx/hostr), version ${VERSION}`;
+  const body = `${content}\n\n---\n\n*This article originated on [Nostr](${nostrLink})*\n\nAuto cross-post via Hostr v${VERSION} at https://github.com/crrdlx/hostr`;
   const jsonMetadata = JSON.stringify({ 
-    tags: ['nostr', 'hive', kind === 30023 ? 'article' : 'note'], 
+    tags: ['hostr'], 
     app: 'hostr-bridge/1.0' 
   });
 
@@ -296,7 +296,7 @@ async function pollHive() {
         continue;
       }
       const bodyLower = post.body.toLowerCase();
-      if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr') || bodyLower.includes('read full note below')) {
+      if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr') || bodyLower.includes('read full note')) {
         console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated or truncated note: "${post.title}" (Permlink: ${post.permlink})`);
         continue;
       }
@@ -377,7 +377,7 @@ async function processHiveToNostrQueue() {
 
 function queueHiveToNostr(post) {
   const bodyLower = post.body ? post.body.toLowerCase() : '';
-  if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr') || bodyLower.includes('read full note below')) {
+  if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr') || bodyLower.includes('read full note')) {
     console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated or truncated note: "${post.title}" (Permlink: ${post.permlink})`);
     return;
   }
@@ -394,12 +394,12 @@ function queueHiveToNostr(post) {
   console.log(`[Hive→Nostr] ℹ️ Cleaned note body length: ${cleanedBody.length} chars`);
   let content = `${post.title}\n\n${cleanedBody}`;
   const hiveLink = createHiveLink(post.permlink);
-  const footer = `\n\nAutomated cross-post from Hive by Hostr (https://github.com/crrdlx/hostr), version ${VERSION}`;
-  const isTruncated = content.length > 280;
+  const footer = `\n\nAuto cross-post from Hive via Hostr v${VERSION} at https://github.com/crrdlx/hostr`;
+  const isTruncated = content.length > 380;
   if (isTruncated) {
-    console.log(`[Hive→Nostr] ✂️ Truncating content from ${content.length} to 280 chars`);
-    const suffix = `... read full note below:\n${hiveLink}`;
-    content = content.substring(0, 280 - (suffix.length + footer.length)) + suffix;
+    console.log(`[Hive→Nostr] ✂️ Truncating content from ${content.length} to 380 chars`);
+    const suffix = `... read full note:\n${hiveLink}`;
+    content = content.substring(0, 380 - (suffix.length + footer.length)) + suffix;
   } else {
     content += `\n\nOriginally posted on Hive at ${hiveLink}`;
   }
@@ -415,13 +415,7 @@ function queueHiveToNostr(post) {
 
 async function postToNostr(post) {
   console.log(`[Hive→Nostr] 📤 Attempting to post to Nostr: "${post.content.substring(0, 30)}..."`);
-  const tags = [
-    ['t', 'story'],
-    ['t', 'hostr'],
-    ['t', 'nostr'],
-    ['t', 'note'],
-    ['r', createHiveLink(post.permlink)],
-  ];
+  const tags = [['t', 'hostr']];
   const event = {
     kind: 1,
     created_at: Math.floor(Date.now() / 1000),
