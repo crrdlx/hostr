@@ -1,6 +1,5 @@
-// v 0.0.11
 // Nostr-to-Hive: listens for kind 30023 (long form) then posts to Hive.
-// Hive-to-Nostr: listens for a Hive post, posts as kind 1 on Nostr, truncating at 380 characters with a link to Hive if needed.
+// Hive-to-Nostr: listens for a Hive post, posts as kind 1 on Nostr, truncating at 380 characters with a link back to original Hive post.
 import 'dotenv/config';
 import { SimplePool, finalizeEvent, getPublicKey } from 'nostr-tools';
 import { Client, PrivateKey } from '@hiveio/dhive';
@@ -11,7 +10,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 // Version constant
-const VERSION = '0.0.11';
+const VERSION = '0.0.13';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -98,15 +97,13 @@ function cleanContent(content) {
 
 // --- Nostr-to-Hive Functions ---
 
-function generateTitle(content, kind, tags) {
-  if (kind === 30023) {
-    const titleTag = tags.find(tag => tag[0] === 'title' && tag[1]);
-    if (titleTag) {
-      return titleTag[1].substring(0, 80);
-    }
-    return content.substring(0, 80) || 'Untitled Nostr Article';
+function generateTitle(content, tags) {
+  const titleTag = tags.find(tag => tag[0] === 'title' && tag[1]);
+  if (titleTag) {
+    return titleTag[1].substring(0, 80);
   }
-  return content.substring(0, 80) || 'Nostr Note';
+  const cleanContent = content.replace(/^#\s*/gm, '').trim();
+  return cleanContent.substring(0, 80) || 'Untitled Nostr Article';
 }
 
 function createNostrLink(eventId) {
@@ -140,7 +137,7 @@ async function processNostrToHiveQueue() {
   const post = nostrToHiveQueue.shift();
 
   try {
-    const result = await postToHive(post.content, post.eventId, post.kind, post.tags);
+    const result = await postToHive(post.content, post.eventId, post.tags, post.kind);
     processedNostrEvents.add([post.eventId, Date.now()]);
     writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
     lastHivePostTime = Date.now();
@@ -177,7 +174,7 @@ function queueNostrToHive(event) {
     console.log(`[Nostr→Hive] ⏭️ Skipping reply event: kind=${event.kind}, id=${event.id}, content="${event.content.substring(0, 30)}..."`);
     return;
   }
-  const post = { content: event.content, eventId: event.id, kind: event.kind, tags: event.tags };
+  const post = { content: event.content, eventId: event.id, tags: event.tags, kind: event.kind };
   if (!nostrToHiveQueue.some(item => item.eventId === event.id)) {
     nostrToHiveQueue.push(post);
     console.log(`[Nostr→Hive] 📥 Added to queue: kind=${event.kind}, id=${event.id}, age=${Math.floor(age/60)}m${age%60}s, content="${event.content.substring(0, 30)}..."`);
@@ -186,15 +183,15 @@ function queueNostrToHive(event) {
   }
 }
 
-async function postToHive(content, eventId, kind, tags) {
+async function postToHive(content, eventId, tags, kind) {
   console.log(`[Nostr→Hive] 📤 Attempting to post to Hive: kind=${kind}, content="${content.substring(0, 30)}..."`);
   const permlink = Math.random().toString(36).substring(2);
-  const title = generateTitle(content, kind, tags);
+  const title = generateTitle(content, tags);
   const nostrLink = createNostrLink(eventId);
   const body = `${content}\n\n---\n\n*This article originated on [Nostr](${nostrLink})*\n\nAuto cross-post via Hostr v${VERSION} at https://github.com/crrdlx/hostr`;
   const jsonMetadata = JSON.stringify({ 
     tags: ['hostr'], 
-    app: 'hostr/1.0' 
+    app: 'hostr-bridge/1.0' 
   });
 
   const postOp = {
@@ -396,7 +393,7 @@ function queueHiveToNostr(post) {
   console.log(`[Hive→Nostr] ℹ️ Cleaned note body length: ${cleanedBody.length} chars`);
   let content = `${post.title}\n\n${cleanedBody}`;
   const hiveLink = createHiveLink(post.permlink);
-  const footer = `\n\nAuto cross-post from Hive via Hostr v${VERSION} at https://github.com/crrdlx/hostr`;
+  const footer = `\n\nAuto cross-post via Hostr bridge v${VERSION}`;
   const isTruncated = content.length > 380;
   if (isTruncated) {
     console.log(`[Hive→Nostr] ✂️ Truncating content from ${content.length} to 380 chars`);
