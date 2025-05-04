@@ -393,7 +393,7 @@ function queueHiveToNostr(post) {
   console.log(`[Hive→Nostr] ℹ️ Cleaned note body length: ${cleanedBody.length} chars`);
   let content = `${post.title}\n\n${cleanedBody}`;
   const hiveLink = createHiveLink(post.permlink);
-  const footer = `\n\nAuto cross-post via Hostr bridge v${VERSION}`;
+  const footer = `\n\nAuto cross-post via Hostr bridge v${VERSION} at https://hostr-home.vercel.app`;
   const isTruncated = content.length > 380;
   if (isTruncated) {
     console.log(`[Hive→Nostr] ✂️ Truncating content from ${content.length} to 380 chars`);
