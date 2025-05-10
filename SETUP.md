@@ -165,8 +165,8 @@ To run the bridge 24/7, use `tmux` (keeps it running even if you close the termi
 - **Safety**: The bridge prevents duplicates and respects Hive’s posting limits.
 
 ## Need Help?
-- On the Hive side, comment with `!HELP` or `!help` in any Hive post and describe your issue. Someone will respond.
-- On the Nostr side, message crrdlx at `npub1qpdufhjpel94srm3ett2azgf49m9dp3n5nm2j0rt0l2mlmc3ux3qza082j`.
+- On the Hive side, reach out to @crrdlx or comment anywhere with `!HELP` or `!help` in any Hive post and describe your issue. Someone will respond.
+- On the Nostr side, message crrdlx at `npub1qpdufhjpel94srm3ett2azgf49m9dp3n5nm2j0rt0l2mlmc3ux3qza082j`
 - Check `README.md` for more details.
 
 Happy bridging!
