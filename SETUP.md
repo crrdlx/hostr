@@ -172,6 +172,12 @@ To run the bridge 24/7, use `tmux` (keeps it running even if you close the termi
 Happy bridging!
 
 ----
+
+## Disclaimer
+
+This is an experimental bridge.  Expect that there will be glitches, errors, and corrections to be made. So, consider it very beta, with no guarantees, and use at your own risk. Source code: https://github.com/crrdlx/hostr
+
+----
 Connect on Hive: @crrdlx
 Connect on Nostr: npub1qpdufhjpel94srm3ett2azgf49m9dp3n5nm2j0rt0l2mlmc3ux3qza082j
 All contacts: https://linktr.ee/crrdlx
