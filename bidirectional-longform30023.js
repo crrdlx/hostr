@@ -10,7 +10,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 // Version constant
-const VERSION = '0.0.13';
+const VERSION = '0.1.13';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
