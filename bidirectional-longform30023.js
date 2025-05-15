@@ -1,5 +1,3 @@
-// Nostr-to-Hive: listens for kind 30023 (long form) then posts to Hive.
-// Hive-to-Nostr: listens for a Hive post, posts as kind 1 on Nostr, truncating at 380 characters with a link back to original Hive post.
 import 'dotenv/config';
 import { SimplePool, finalizeEvent, getPublicKey } from 'nostr-tools';
 import { Client, PrivateKey } from '@hiveio/dhive';
@@ -10,7 +8,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 // Version constant
-const VERSION = '0.1.13';
+const VERSION = '0.1.16';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -21,7 +19,7 @@ const HIVE_POSTING_KEY = process.env.HIVE_POSTING_KEY;
 const NOSTR_PUBLIC_KEY = process.env.NOSTR_PUBLIC_KEY;
 const NOSTR_PRIVATE_KEY = process.env.NOSTR_PRIVATE_KEY;
 
-console.log(`Starting bidirectional bridge for Hive user: ${HIVE_USERNAME}, Nostr pubkey: ${NOSTR_PUBLIC_KEY}`);
+console.log(`Starting bidirectional long-form bridge for Hive user: ${HIVE_USERNAME}, Nostr pubkey: ${NOSTR_PUBLIC_KEY}`);
 
 if (!HIVE_USERNAME || !HIVE_POSTING_KEY || !NOSTR_PUBLIC_KEY || !NOSTR_PRIVATE_KEY) {
   throw new Error('Missing required environment variables in .env file');
@@ -32,13 +30,13 @@ const hiveClient = new Client('https://api.hive.blog');
 
 // Nostr setup
 const relays = [
-  'wss://nostr.wine',
-  'wss://relay.nostr.band',
   'wss://relay.damus.io',
   'wss://nos.lol',
+  'wss://relay.snort.social',
+  'wss://nostr.wine',
+  'wss://relay.nostr.band',
   'wss://nostr-pub.wellorder.net',
   'wss://offchain.pub',
-  'wss://relay.snort.social',
   'wss://relay.primal.net',
   'wss://nostr.oxtr.dev',
   'wss://purplepag.es',
@@ -54,8 +52,8 @@ let nostrToHiveQueue = [];
 let hiveToNostrQueue = [];
 let nostrToHivePosting = false;
 let hiveToNostrPosting = false;
-const PROCESSED_PERMLINKS_FILE = 'processed_permlinks.json';
-const PROCESSED_EVENTS_FILE = 'processed_nostr_events.json';
+const PROCESSED_PERMLINKS_FILE = 'processed_permlinks_longform.json';
+const PROCESSED_EVENTS_FILE = 'processed_nostr_events_longform.json';
 let processedHivePermlinks = new Set(fs.existsSync(PROCESSED_PERMLINKS_FILE) ? JSON.parse(fs.readFileSync(PROCESSED_PERMLINKS_FILE)) : []);
 let processedNostrEvents = new Set(fs.existsSync(PROCESSED_EVENTS_FILE) ? JSON.parse(fs.readFileSync(PROCESSED_EVENTS_FILE)) : []);
 
@@ -66,7 +64,7 @@ function writeJsonFileSync(filePath, data) {
     writeFileSync(tempFile, JSON.stringify(data));
     fs.renameSync(tempFile, filePath);
   } catch (err) {
-    console.error(`[Bridge] ❌ Error writing to ${filePath}:`, err.message);
+    console.error(`[Longform] ❌ Error writing to ${filePath}:`, err.message);
     throw err;
   }
 }
@@ -79,9 +77,9 @@ function cleanProcessedEntries() {
     return now - (timestamp || now) < SEVEN_DAYS_MS;
   }).map(entry => Array.isArray(entry) ? entry : [entry, now]));
   processedNostrEvents = new Set([...processedNostrEvents].filter(entry => {
-    const [eventId, timestamp] = Array.isArray(entry) ? entry : [eventId, now];
+    const [eventId, timestamp] = Array.isArray(entry) ? entry : [entry, now];
     return now - (timestamp || now) < SEVEN_DAYS_MS;
-  }).map(entry => Array.isArray(entry) ? entry : [eventId, now]));
+  }).map(entry => Array.isArray(entry) ? entry : [entry, now]));
   writeJsonFileSync(PROCESSED_PERMLINKS_FILE, [...processedHivePermlinks]);
   writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
 }
@@ -93,6 +91,32 @@ function cleanContent(content) {
   cleaned = cleaned.replace(/posted via.*d\.buzz.*$/i, '');
   cleaned = cleaned.replace(/\s*\n\s*/g, '\n').trim();
   return cleaned;
+}
+
+function stripMarkdown(content) {
+  let result = content;
+  result = result.replace(/!\[([^\]]*?)\]\(([^)]+)\)/g, '$2');
+  result = result.replace(/!\[([^\]]*?)\]/g, '');
+  result = result.replace(/!\[([^\]]*?)?/g, '');
+  result = result.replace(/^#{1,6}\s*(.*)$/gm, '$1');
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$2');
+  result = result.replace(/\*\*([^*]+)\*\*/g, '$1');
+  result = result.replace(/__([^_]+)__/g, '$1');
+  result = result.replace(/\*([^*]+)\*/g, '$1');
+  result = result.replace(/_([^_]+)_/g, '$1');
+  result = result.replace(/```[^`]*```/g, '');
+  result = result.replace(/`([^`]+)`/g, '$1');
+  result = result.replace(/^>\s*(.*)$/gm, '$1');
+  result = result.replace(/^[-*]\s*(.*)$/gm, '$1');
+  result = result.replace(/^\d+\.\s*(.*)$/gm, '$1');
+  result = result.replace(/^[-*_]{3,}\s*$/gm, '');
+  result = result.replace(/\n\s*\n/g, '\n').trim();
+  return result;
+}
+
+function isCrossPost(content) {
+  const regex = /auto\s*cross-post\s*(?:from\s*(?:hive|nostr)\s*)?via\s*hostr/i;
+  return regex.test(content);
 }
 
 // --- Nostr-to-Hive Functions ---
@@ -137,7 +161,7 @@ async function processNostrToHiveQueue() {
   const post = nostrToHiveQueue.shift();
 
   try {
-    const result = await postToHive(post.content, post.eventId, post.tags, post.kind);
+    const result = await postToHive(post.content, post.eventId, post.tags);
     processedNostrEvents.add([post.eventId, Date.now()]);
     writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
     lastHivePostTime = Date.now();
@@ -165,16 +189,11 @@ function queueNostrToHive(event) {
     console.log(`[Nostr→Hive] ⏭️ Skipping already processed event: kind=${event.kind}, id=${event.id}, age=${Math.floor(age/60)}m${age%60}s, content="${event.content.substring(0, 30)}..."`);
     return;
   }
-  if (event.content.includes('Auto cross-post from Hive via Hostr')) {
-    console.log(`[Nostr→Hive] ⏭️ Skipping Hive-originated event: kind=${event.kind}, id=${event.id}, content="${event.content.substring(0, 30)}..."`);
+  if (isCrossPost(event.content)) {
+    console.log(`[Nostr→Hive] ⏭️ Skipping Hive-originated event: kind=${event.kind}, id=${event.id}, content="${event.content}"`);
     return;
   }
-  const isReply = event.tags.some(tag => tag[0] === 'e' || tag[0] === 'p');
-  if (isReply) {
-    console.log(`[Nostr→Hive] ⏭️ Skipping reply event: kind=${event.kind}, id=${event.id}, content="${event.content.substring(0, 30)}..."`);
-    return;
-  }
-  const post = { content: event.content, eventId: event.id, tags: event.tags, kind: event.kind };
+  const post = { content: event.content, eventId: event.id, tags: event.tags };
   if (!nostrToHiveQueue.some(item => item.eventId === event.id)) {
     nostrToHiveQueue.push(post);
     console.log(`[Nostr→Hive] 📥 Added to queue: kind=${event.kind}, id=${event.id}, age=${Math.floor(age/60)}m${age%60}s, content="${event.content.substring(0, 30)}..."`);
@@ -183,15 +202,15 @@ function queueNostrToHive(event) {
   }
 }
 
-async function postToHive(content, eventId, tags, kind) {
-  console.log(`[Nostr→Hive] 📤 Attempting to post to Hive: kind=${kind}, content="${content.substring(0, 30)}..."`);
+async function postToHive(content, eventId, tags) {
+  console.log(`[Nostr→Hive] 📤 Attempting to post to Hive: content="${content.substring(0, 30)}..."`);
   const permlink = Math.random().toString(36).substring(2);
   const title = generateTitle(content, tags);
   const nostrLink = createNostrLink(eventId);
-  const body = `${content}\n\n---\n\n*This article originated on [Nostr](${nostrLink})*\n\nAuto cross-post via Hostr v${VERSION} at https://github.com/crrdlx/hostr`;
+  const body = `${content}\n\nThis article originated on [Nostr](${nostrLink})\nAuto cross-post via Hostr v${VERSION} at https://github.com/crrdlx/hostr`;
   const jsonMetadata = JSON.stringify({ 
-    tags: ['hostr'], 
-    app: 'hostr-bridge/1.0' 
+    tags: ['hostr', 'longform'], 
+    app: 'hostr-longform/1.0' 
   });
 
   const postOp = {
@@ -209,7 +228,7 @@ async function postToHive(content, eventId, tags, kind) {
       postOp,
       PrivateKey.fromString(HIVE_POSTING_KEY)
     );
-    console.log(`[Nostr→Hive] ✅ Posted to Hive: ${result.id}, Permlink: ${permlink}, Title: "${title}"`);
+    console.log(`[Nostr→Hive] ✅ Posted to Hive: ${result.id}, Permlink: ${permlink}, Title: "${title}", Nostr Link: ${nostrLink}`);
     return result;
   } catch (error) {
     console.error('[Nostr→Hive] ❌ Error posting to Hive:', error.message);
@@ -230,7 +249,7 @@ async function listenToNostr() {
     }
   }
   if (connectedRelays.length === 0) {
-    console.error('[Nostr→Hive] ❌ No relays connected, continuing to poll Hive');
+    console.error('[Nostr→Hive] ❌ No relays connected, retrying in 2 minutes');
     setTimeout(listenToNostr, TWO_MINUTES_MS);
     return;
   }
@@ -254,6 +273,7 @@ async function listenToNostr() {
           setTimeout(listenToNostr, 1000);
         } else {
           console.error('[Nostr→Hive] ❌ Subscription error:', err.message || err);
+          setTimeout(listenToNostr, TWO_MINUTES_MS);
         }
       },
     });
@@ -273,8 +293,9 @@ async function listenToNostr() {
 
 async function pollHive() {
   try {
-    console.log('[Hive→Nostr] 🔍 Checking for new Hive notes...');
+    console.log('[Hive→Nostr] 🔍 Checking for new Hive articles...');
     const posts = await fetchRecentHivePosts();
+    console.log(`[Hive→Nostr] ℹ️ Found ${posts.length} posts`);
     const sortedPosts = [...posts].sort((a, b) => 
       new Date(a.created + 'Z').getTime() - new Date(b.created + 'Z').getTime()
     );
@@ -283,7 +304,7 @@ async function pollHive() {
     for (const post of sortedPosts) {
       console.log(`[Hive→Nostr] ℹ️ Processing post: author=${post.author}, title="${post.title}", permlink=${post.permlink}, created=${post.created}, parent_author=${post.parent_author || ''}`);
       if (post.author !== HIVE_USERNAME) {
-        console.log(`[Hive→Nostr] ⏭️ Skipping note from ${post.author} (not ${HIVE_USERNAME})`);
+        console.log(`[Hive→Nostr] ⏭️ Skipping article from ${post.author} (not ${HIVE_USERNAME})`);
         continue;
       }
       if (post.parent_author) {
@@ -294,20 +315,19 @@ async function pollHive() {
         console.log(`[Hive→Nostr] ⚠️ Skipping post with missing body: "${post.title || 'Untitled'}" (Permlink: ${post.permlink})`);
         continue;
       }
-      const bodyLower = post.body.toLowerCase();
-      if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr') || bodyLower.includes('read full note')) {
-        console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated or truncated note: "${post.title}" (Permlink: ${post.permlink})`);
+      if (isCrossPost(post.body)) {
+        console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated article: "${post.title}" (Permlink: ${post.permlink}), body="${post.body}"`);
         continue;
       }
       if (isRecentPost(post)) {
-        console.log(`[Hive→Nostr] 📝 Found recent Hive note: "${post.title}"`);
+        console.log(`[Hive→Nostr] 📝 Found recent Hive article: "${post.title}"`);
         queueHiveToNostr(post);
         newPostsFound++;
       }
     }
 
     if (newPostsFound === 0) {
-      console.log('[Hive→Nostr] 📭 No new notes found');
+      console.log('[Hive→Nostr] 📭 No new articles found');
     }
   } catch (error) {
     console.error('[Hive→Nostr] ❌ Error polling Hive:', error.message);
@@ -324,7 +344,7 @@ async function fetchRecentHivePosts() {
     };
     console.log(`[Hive→Nostr] 🔍 Fetching posts with query: ${JSON.stringify(query)}`);
     const posts = await hiveClient.database.getDiscussions('blog', query);
-    console.log(`[Hive→Nostr] ℹ️ API returned ${posts.length} posts: ${JSON.stringify(posts.map(p => ({ author: p.author, permlink: p.permlink, created: p.created })))}`);
+    console.log(`[Hive→Nostr] ℹ️ API returned ${posts.length} posts: ${JSON.stringify(posts.map(p => ({ author: p.author, permlink: p.permlink, title: p.title, created: p.created })))}`);
     return posts;
   } catch (error) {
     console.error('[Hive→Nostr] ❌ Error fetching Hive posts:', error.message);
@@ -340,7 +360,7 @@ function isRecentPost(post) {
   if (!isRecent) {
     const minutes = Math.floor(age / 60000);
     const seconds = Math.floor((age % 60000) / 1000);
-    console.log(`[Hive→Nostr] ⏭️ Skipping old note (${minutes}m ${seconds}s old): "${post.title}"`);
+    console.log(`[Hive→Nostr] ⏭️ Skipping old article (${minutes}m ${seconds}s old): "${post.title}"`);
   }
   return isRecent;
 }
@@ -363,7 +383,7 @@ async function processHiveToNostrQueue() {
     writeJsonFileSync(PROCESSED_PERMLINKS_FILE, [...processedHivePermlinks]);
     console.log(`[Hive→Nostr] 📊 Queue status: ${hiveToNostrQueue.length} items remaining`);
   } catch (error) {
-    console.error('[Hive→Nostr] ❌ Error processing note:', error.message);
+    console.error('[Hive→Nostr] ❌ Error processing article:', error.message);
     hiveToNostrQueue.unshift(post);
     setTimeout(processHiveToNostrQueue, TWO_MINUTES_MS);
   } finally {
@@ -375,35 +395,35 @@ async function processHiveToNostrQueue() {
 }
 
 function queueHiveToNostr(post) {
-  const bodyLower = post.body ? post.body.toLowerCase() : '';
-  if (bodyLower.includes('originated on [nostr]') || bodyLower.includes('originated on nostr') || bodyLower.includes('read full note')) {
-    console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated or truncated note: "${post.title}" (Permlink: ${post.permlink})`);
+  if (isCrossPost(post.body)) {
+    console.log(`[Hive→Nostr] ⏭️ Skipping Nostr-originated article: "${post.title}" (Permlink: ${post.permlink}), body="${post.body}"`);
     return;
   }
   console.log(`[Hive→Nostr] ℹ️ Checking permlink: ${post.permlink}, processed size: ${processedHivePermlinks.size}`);
   if (processedHivePermlinks.has(post.permlink) || [...processedHivePermlinks].some(([permlink]) => permlink === post.permlink)) {
-    console.log(`[Hive→Nostr] ⏭️ Skipping already processed note: "${post.title}" (Permlink: ${post.permlink})`);
+    console.log(`[Hive→Nostr] ⏭️ Skipping already processed article: "${post.title}" (Permlink: ${post.permlink})`);
     return;
   }
   processedHivePermlinks.add([post.permlink, Date.now()]);
   writeJsonFileSync(PROCESSED_PERMLINKS_FILE, [...processedHivePermlinks]);
   console.log(`[Hive→Nostr] ℹ️ Added permlink to processed: ${post.permlink}, new size: ${processedHivePermlinks.size}`);
-  console.log(`[Hive→Nostr] ℹ️ Raw note body length: ${post.body.length} chars`);
+  console.log(`[Hive→Nostr] ℹ️ Raw article body length: ${post.body.length} chars`);
   const cleanedBody = cleanContent(post.body);
-  console.log(`[Hive→Nostr] ℹ️ Cleaned note body length: ${cleanedBody.length} chars`);
-  let content = `${post.title}\n\n${cleanedBody}`;
+  console.log(`[Hive→Nostr] ℹ️ Cleaned article body length: ${cleanedBody.length} chars`);
+  const plainBody = stripMarkdown(cleanedBody);
+  console.log(`[Hive→Nostr] ℹ️ Plain article body length: ${plainBody.length} chars`);
+  let content = plainBody;
   const hiveLink = createHiveLink(post.permlink);
-  const footer = `\n\nAuto cross-post via Hostr bridge v${VERSION} at https://hostr-home.vercel.app`;
-  const isTruncated = content.length > 380;
+  const footer = `\n\nAuto cross-post via Hostr v${VERSION} at https://hostr-home.vercel.app`;
+  let summary = content.substring(0, 280);
+  const isTruncated = content.length > 280;
   if (isTruncated) {
-    console.log(`[Hive→Nostr] ✂️ Truncating content from ${content.length} to 380 chars`);
-    const suffix = `... read full note:\n${hiveLink}`;
-    content = content.substring(0, 380 - (suffix.length + footer.length)) + suffix;
-  } else {
-    content += `\n\nOriginally posted on Hive at ${hiveLink}`;
+    console.log(`[Hive→Nostr] ✂️ Truncating summary from ${content.length} to 280 chars`);
+    const suffix = `... read original post in full:\n${hiveLink}`;
+    summary = content.substring(0, 280 - suffix.length) + suffix;
   }
-  content += footer;
-  const postData = { content, permlink: post.permlink, isTruncated };
+  content += `\n\nOriginally posted on Hive at ${hiveLink}${footer}`;
+  const postData = { content, permlink: post.permlink, title: post.title, summary };
   if (!hiveToNostrQueue.some(item => item.permlink === post.permlink)) {
     hiveToNostrQueue.push(postData);
     console.log(`[Hive→Nostr] 📥 Added to queue: "${post.title}" (Permlink: ${post.permlink})`);
@@ -414,9 +434,15 @@ function queueHiveToNostr(post) {
 
 async function postToNostr(post) {
   console.log(`[Hive→Nostr] 📤 Attempting to post to Nostr: "${post.content.substring(0, 30)}..."`);
-  const tags = [['t', 'hostr']];
+  const tags = [
+    ['t', 'hostr'],
+    ['t', 'longform'],
+    ['title', post.title],
+    ['summary', post.summary],
+    ['hive-permlink', post.permlink]
+  ];
   const event = {
-    kind: 1,
+    kind: 30023,
     created_at: Math.floor(Date.now() / 1000),
     tags,
     content: post.content,
@@ -438,7 +464,7 @@ async function postToNostr(post) {
     if (successfulRelays.length < 3) {
       throw new Error(`Failed to publish to at least 3 relays; successful: ${successfulRelays.join(', ')}`);
     }
-    console.log(`[Hive→Nostr] ✅ Published to Nostr, event ID: ${signedEvent.id}, kind=1, relays: ${successfulRelays.join(', ')}`);
+    console.log(`[Hive→Nostr] ✅ Published to Nostr, event ID: ${signedEvent.id}, kind=30023, relays: ${successfulRelays.join(', ')}`);
     return signedEvent;
   } catch (error) {
     console.error('[Hive→Nostr] ❌ Error posting to Nostr:', error.message);
@@ -449,37 +475,39 @@ async function postToNostr(post) {
 // Keep process alive
 function keepAlive() {
   setInterval(() => {
-    console.log('[Bridge] 🕒 Heartbeat: Still listening for events...');
+    console.log('[Longform] 🕒 Heartbeat: Still listening for events...');
   }, 60 * 1000);
 }
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('[Bridge] ⚠️ Unhandled promise rejection:', reason.message || reason, reason.stack || '');
+  console.error('[Longform] ⚠️ Unhandled promise rejection:', reason.message || reason, reason.stack || '');
+  console.log('[Longform] 🔄 Restarting bridge due to unhandled rejection...');
+  setTimeout(start, 5000);
 });
 
 // Initialization
 async function start() {
-  console.log(`[Bridge] ℹ️ Loaded environment: HIVE_USERNAME=${HIVE_USERNAME}, NOSTR_PUBLIC_KEY=${NOSTR_PUBLIC_KEY}`);
+  console.log(`[Longform] ℹ️ Loaded environment: HIVE_USERNAME=${HIVE_USERNAME}, NOSTR_PUBLIC_KEY=${NOSTR_PUBLIC_KEY}`);
   cleanProcessedEntries();
   try {
-    await listenToNostr();
-    await pollHive();
+    await Promise.all([listenToNostr(), pollHive()]);
     keepAlive();
   } catch (err) {
-    console.error('[Bridge] ❌ Error in bridge initialization:', err.message);
+    console.error('[Longform] ❌ Error in bridge initialization:', err.message);
+    setTimeout(start, TWO_MINUTES_MS);
   }
 }
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-  console.log(`[Bridge] 👋 Shutting down... Nostr→Hive: ${nostrToHiveQueue.length}, Hive→Nostr: ${hiveToNostrQueue.length} items in queues`);
+  console.log(`[Longform] 👋 Shutting down... Nostr→Hive: ${nostrToHiveQueue.length}, Hive→Nostr: ${hiveToNostrQueue.length} items in queues`);
   pool.close(relays);
   process.exit(0);
 });
 
 // Run the script
 start().catch((err) => {
-  console.error('[Bridge] ❌ Error starting bridge:', err.message);
+  console.error('[Longform] ❌ Error starting bridge:', err.message);
   process.exit(1);
 });
