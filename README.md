@@ -58,11 +58,11 @@ I feel the #1 reason a Nostr user might wish to use this bridge is *to permanent
 
 You don't want to over-post on Hive. To avoid over-posting, Hostr has two versions of the script:
 
-1.  **bidirectional-longform30023.js** 
+1.  **bidirectional-longform.js** 
 	- Nostr ➡️ Hive - Listens *only* for kind 30023 (long form) Nostr notes to bridge over to Hive. Kind 1 short form notes are ignored.
 	- Hive ➡️ Nostr - Any Hive post over 380 characters gets truncated as a kind 1 (short form) Nostr note (with a link back to the full Hive post).
 
- 2. **bidirectional-bridge.js** 
+ 2. **bidirectional-shortform.js** 
     - Nostr➡️Hive - This script listens for both kind 1 (short form) and kind 30023 (long form) Nostr notes and bridges both over to Hive.
 	- Hive ➡️ Nostr - Same as above (380+ is truncated).
 
@@ -72,11 +72,11 @@ Which script version should I use?
 
   
 
-1. If you post frequently on Nostr (more than 2 times per day?), the bidirectional-longform30023.js script is likely best. Per Hive community norms, you don't want to post too often on there. With this script version, only long form notes will bridge over from Nostr to Hive. 
+1. If you post frequently on Nostr (more than 2 times per day?), the bidirectional-longform.js script is likely best. Per Hive community norms, you don't want to post too often on there. With this script version, only long form notes will bridge over from Nostr to Hive. 
    - For newcomers to Hive, I would start with this script to be safe.
    - If in doubt, **use this script**.
 
-3. If you post infrequently on Nostr (2 times per day or fewer?), the bidirectional-bridge.js (both kinds 1 and 30023) might work fine for you.
+3. If you post infrequently on Nostr (2 times per day or fewer?), the bidirectional-shortform.js (both kinds 1 and 30023) might work fine for you.
 
 ## Nostr users - how to begin
 

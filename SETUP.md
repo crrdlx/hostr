@@ -92,7 +92,7 @@ ls
 
 ```
 
-You should see a `bidirectional-bridge.js`, `bidirectional-longform30023.js`, `package.json`, a license, `README.md`, and this `SETUP.md`.
+You should see a `bidirectional-shortform.js`, `bidirectional-longform.js`, `package.json`, a license, `README.md`, and this `SETUP.md`.
 
   
   
@@ -175,13 +175,13 @@ chmod 600 .env
 
 Choose which bridge to run:
 
--  `bidirectional-longform30023.js`: Only listens for and bridges Nostr *long-form articles* (kind 30023) to Hive, and it bridges Hive posts to Nostr. This is recommended if you post frequently on Nostr to avoid spamming Hive. "Frequently" might mean more than 3 posts per day.
+-  `bidirectional-longform.js`: Only listens for and bridges Nostr *long-form articles* (kind 30023) to Hive, and it bridges Hive posts to Nostr. This is recommended if you post frequently on Nostr to avoid spamming Hive. "Frequently" might mean more than 3 posts per day.
 
--  `bidirectional-bridge.js`: Listens for and bridges both long-form articles (kind 30023) *and* short notes (kind 1) to Hive, and it bridges Hive posts to Nostr. Use this version if you post rarely on Nostr. By "rarely," that may mean 3 or fewer per day.
+-  `bidirectional-shortform.js`: Listens for and bridges both long-form articles (kind 30023) *and* short notes (kind 1) to Hive, and it bridges Hive posts to Nostr. Use this version if you post rarely on Nostr. By "rarely," that may mean 3 or fewer per day.
 
   
 
-If unsure, start with `bidirectional-longform30023.js` to be safe. See `README.md` for details.
+If unsure, start with `bidirectional-longform.js` to be safe. See `README.md` for details.
 
   
 
@@ -189,7 +189,7 @@ If unsure, start with `bidirectional-longform30023.js` to be safe. See `README.m
 
 ```bash
 
-node bidirectional-longform30023.js
+node bidirectional-longform.js
 
 ```
 
@@ -197,7 +197,7 @@ Or:
 
 ```bash
 
-node bidirectional-bridge.js
+node bidirectional-shortform.js
 
 ```
 
@@ -253,7 +253,7 @@ tmux new -s hostr-bridge
 
 cd ~/hostr
 
-node bidirectional-longform30023.js
+node bidirectional-longform.js
 
 ```
 
@@ -261,7 +261,7 @@ Or:
 
 ```bash
 
-node bidirectional-bridge.js
+node bidirectional-shortform.js
 
 ```
 
@@ -301,7 +301,7 @@ tmux a -t hostr-bridge
 
 ### Tips
 
--  **Hive Posting**: Hive allows one post every 5 minutes. The bridge queues posts to avoid spamming. Too many Hive posts can lead to downvotes and lower reputation, so build your reputation carefully. Use `bidirectional-longform30023.js` if you post often on Nostr.
+-  **Hive Posting**: Hive allows one post every 5 minutes. The bridge queues posts to avoid spamming. Too many Hive posts can lead to downvotes and lower reputation, so build your reputation carefully. Use `bidirectional-longform.js` if you post often on Nostr.
 
 -  **Nostr Relays**: The bridge uses relays like `wss://nos.lol` and `wss://nostr.wine`. Ensure your Nostr app (e.g., [nostrudel.ninja](https://nostrudel.ninja)) uses these relays for posts to be detected.
 
@@ -313,7 +313,7 @@ tmux a -t hostr-bridge
 
 - No posts on Nostr? Verify your Nostr keys and relays in your app.
 
-- Restart with `node bidirectional-longform30023.js` or `node bidirectional-bridge.js` to see logs.
+- Restart with `node bidirectional-longform.js` or `node bidirectional-shortform.js` to see logs.
 
 -  **Community**: Use tags that are relevant to the content of your post. Hive frowns on tag spamming. Post sparingly (a few times per day) to respect Hive norms.
 
