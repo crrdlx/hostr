@@ -92,7 +92,7 @@ ls
 
 ```
 
-You should see a `bidirectional-shortform.js`, `bidirectional-longform.js`, `package.json`, a license, `README.md`, and this `SETUP.md`.
+You should see a `bidirectional-bridge.js`, `bidirectional-longform.js`, `package.json`, a license, `README.md`, and this `SETUP.md`.
 
   
   
@@ -177,7 +177,7 @@ Choose which bridge to run:
 
 -  `bidirectional-longform.js`: Only listens for and bridges Nostr *long-form articles* (kind 30023) to Hive, and it bridges Hive posts to Nostr. This is recommended if you post frequently on Nostr to avoid spamming Hive. "Frequently" might mean more than 3 posts per day.
 
--  `bidirectional-shortform.js`: Listens for and bridges both long-form articles (kind 30023) *and* short notes (kind 1) to Hive, and it bridges Hive posts to Nostr. Use this version if you post rarely on Nostr. By "rarely," that may mean 3 or fewer per day.
+-  `bidirectional-bridge.js`: Listens for and bridges both long-form articles (kind 30023) *and* short notes (kind 1) to Hive, and it bridges Hive posts to Nostr. Use this version if you post rarely on Nostr. By "rarely," that may mean 3 or fewer per day.
 
   
 
@@ -197,7 +197,7 @@ Or:
 
 ```bash
 
-node bidirectional-shortform.js
+node bidirectional-bridge.js
 
 ```
 
@@ -261,7 +261,7 @@ Or:
 
 ```bash
 
-node bidirectional-shortform.js
+node bidirectional-bridge.js
 
 ```
 
@@ -313,7 +313,7 @@ tmux a -t hostr-bridge
 
 - No posts on Nostr? Verify your Nostr keys and relays in your app.
 
-- Restart with `node bidirectional-longform.js` or `node bidirectional-shortform.js` to see logs.
+- Restart with `node bidirectional-longform.js` or `node bidirectional-bridge.js` to see logs.
 
 -  **Community**: Use tags that are relevant to the content of your post. Hive frowns on tag spamming. Post sparingly (a few times per day) to respect Hive norms.
 
