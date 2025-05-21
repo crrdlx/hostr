@@ -1,4 +1,3 @@
-
 # Hostr
 
 ## Hive + Nostr = Hostr, a bidirectional bridge.
@@ -21,10 +20,9 @@ I feel the #1 reason a Nostr user might wish to use this bridge is *to permanent
 
 3.  **Increase your reach** and potentially gain followers. Your content will bridge off of the Nostr island and be opened to 10-30,000 daily Hive users. Go to [https://peakd.com/c/hive-133987](https://peakd.com/c/hive-133987) and look for “Hive statistics” to see numbers.
 
-
 4.  **Earn rewards** in HIVE and HBD. “Likes” on Nostr do not reward you monetarily, but every upvote on Hive yields rewards. For bitcoin maxis, these tokens can easily be swapped into sats with tools like the [https://v4v.app](https://v4v.app) web app, or others.
 
-5. Help **grow Nostr**. Every note that bridges over to Hive will have a footer saying something like, “This note originated on Nostr,” with a link back to your Nostr note on njump.me. On that page, a "Join Nostr" button is prominent. 
+5. Help **grow Nostr**. Every note that bridges over to Hive will have a footer saying something like, “This note originated on Nostr,” with a link back to your Nostr note on njump.me. On that page, a "Join Nostr" button is prominent.
 
 ## Hive users - why you might want to bridge to Nostr
 
@@ -45,7 +43,9 @@ I feel the #1 reason a Nostr user might wish to use this bridge is *to permanent
 - You have one private key, called an “nsec”. It goes along with your “npub”, your public key. Your npub is your username, your nsec IS your account.
 
 - You simply need an nsec, then a “client” which is a front end.
+
 - You need to add “relays” to your client in order to connect. This is very easy, but how to do it depends on the client. Client's usually walk you through this when you start.
+
 - Short form content (like the old "Tweets") are called kind 1 notes. Long form notes, like most Hive posts, are called kind 30023.
 
 **If you’re unfamiliar with Hive, it has more quirks:**
@@ -58,25 +58,27 @@ I feel the #1 reason a Nostr user might wish to use this bridge is *to permanent
 
 You don't want to over-post on Hive. To avoid over-posting, Hostr has two versions of the script:
 
-1.  **bidirectional-longform.js** 
-	- Nostr ➡️ Hive - Listens *only* for kind 30023 (long form) Nostr notes to bridge over to Hive. Kind 1 short form notes are ignored.
-	- Hive ➡️ Nostr - Any Hive post over 380 characters gets truncated as a kind 1 (short form) Nostr note (with a link back to the full Hive post).
+1.  **bidirectional-longform.js**
 
- 2. **bidirectional-shortform.js** 
-    - Nostr➡️Hive - This script listens for both kind 1 (short form) and kind 30023 (long form) Nostr notes and bridges both over to Hive.
-	- Hive ➡️ Nostr - Same as above (380+ is truncated).
+- Nostr ➡️ Hive - Listens *only* for kind 30023 (long form) Nostr notes to bridge over to Hive. Kind 1 short form notes are ignored.
 
-  
+- Hive ➡️ Nostr - Any Hive post over 380 characters gets truncated as a kind 1 (short form) Nostr note (with a link back to the full Hive post).
+
+2.  **bidirectional-bridge.js**
+
+- Nostr➡️Hive - This script listens for both kind 1 (short form) and kind 30023 (long form) Nostr notes and bridges both over to Hive. Kind 1 Nostr short form notes are posted to Hive as PeakD Snaps. Kind 30023 Nostr long form notes are posted as top level Hive posts.
+
+- Hive ➡️ Nostr - Same as above (380+ is truncated).
 
 Which script version should I use?
 
-  
+1. If you post frequently on Nostr (2+ long form posts? 5+ short form notes?), the bidirectional-longform.js script is likely best. Per Hive community norms, you don't want to post too often on there. With this script version, only long form notes will bridge over from Nostr to Hive.
 
-1. If you post frequently on Nostr (more than 2 times per day?), the bidirectional-longform.js script is likely best. Per Hive community norms, you don't want to post too often on there. With this script version, only long form notes will bridge over from Nostr to Hive. 
-   - For newcomers to Hive, I would start with this script to be safe.
-   - If in doubt, **use this script**.
+- For newcomers to Hive, I would start with this script to be safe due to both Hive community norms and resource credit concerns. 
 
-3. If you post infrequently on Nostr (2 times per day or fewer?), the bidirectional-shortform.js (both kinds 1 and 30023) might work fine for you.
+- If in doubt, **use this longform (lf) script**.
+
+3. If you post infrequently on Nostr (2 long form posts per day or fewer? A handful of short form posts per day?), the bidirectional-bridge.js (bridging both kinds 1 and 30023) might work fine for you.
 
 ## Nostr users - how to begin
 
@@ -108,7 +110,7 @@ To set up the bridge, see [SETUP.md](https://github.com/crrdlx/hostr/blob/main/S
 
 ## Disclaimer
 
-This is an experimental bridge.  Expect that there will be glitches, errors, and corrections to be made. So, consider it very beta, with no guarantees, and use at your own risk. Source code: https://github.com/crrdlx/hostr
+This is an experimental bridge. Expect that there will be glitches, errors, and corrections to be made. So, consider it very beta, with no guarantees, and use at your own risk. Source code: https://github.com/crrdlx/hostr
 
 ----
 
