@@ -1,4 +1,4 @@
-// bidirectional-bridge.js v0.1.38 Snaps+Longform
+// bidirectional-bridge.js v0.1.41 Snaps+Longform+Titles+FooterFix+NoRedundantLink
 import 'dotenv/config';
 import { SimplePool, finalizeEvent, getPublicKey } from 'nostr-tools';
 import { Client, PrivateKey } from '@hiveio/dhive';
@@ -9,7 +9,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 // Version constant
-const VERSION = '0.1.38';
+const VERSION = '0.1.41';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -20,7 +20,7 @@ const HIVE_POSTING_KEY = process.env.HIVE_POSTING_KEY;
 const NOSTR_PUBLIC_KEY = process.env.NOSTR_PUBLIC_KEY;
 const NOSTR_PRIVATE_KEY = process.env.NOSTR_PRIVATE_KEY;
 
-console.log(`Starting bidirectional bridge with Snaps and longform integration for Hive user: ${HIVE_USERNAME}, Nostr pubkey: ${NOSTR_PUBLIC_KEY}`);
+console.log(`Starting bidirectional bridge with Snaps, longform, titles, footer fix, and no redundant link for Hive user: ${HIVE_USERNAME}, Nostr pubkey: ${NOSTR_PUBLIC_KEY}`);
 
 if (!HIVE_USERNAME || !HIVE_POSTING_KEY || !NOSTR_PUBLIC_KEY || !NOSTR_PRIVATE_KEY) {
   throw new Error('Missing required environment variables in .env file');
@@ -49,7 +49,7 @@ const TWO_MINUTES_MS = 2 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_SNAPS_PER_DAY = 10;
 const MAX_LONGFORM_PER_DAY = 5;
-let lastHivePostTime = 0; // For top-level posts (if any)
+let lastHivePostTime = 0;
 let dailySnapCount = 0;
 let dailyLongformCount = 0;
 let lastSnapDay = new Date().toDateString();
@@ -501,21 +501,25 @@ function queueHiveToNostr(post) {
     console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping already processed post: "${post.title}" (Permlink: ${post.permlink})`);
     return;
   }
+  console.log(`[Bridge] [Hive→Nostr] ℹ️ Raw post title: "${post.title || ''}", Length: ${post.title?.length || 0} chars`);
   console.log(`[Bridge] [Hive→Nostr] ℹ️ Raw post body length: ${post.body.length} chars`);
-  const cleanedBody = cleanContent(post.body);
+  const rawContent = post.title ? `${post.title}\n${post.body}` : post.body;
+  console.log(`[Bridge] [Hive→Nostr] ℹ️ Combined raw content length: ${rawContent.length} chars`);
+  const cleanedBody = cleanContent(rawContent);
   console.log(`[Bridge] [Hive→Nostr] ℹ️ Cleaned post body length: ${cleanedBody.length} chars`);
   const plainBody = stripMarkdown(cleanedBody);
   console.log(`[Bridge] [Hive→Nostr] ℹ️ Plain post body length: ${plainBody.length} chars`);
   let content = plainBody;
   const hiveLink = createHiveLink(post.author, post.permlink);
-  const footer = `\n\nAuto cross-post via Hostr v${VERSION} (br) at https://hostr-home.vercel.app`;
-  const isTruncated = content.length > 380;
+  const footer = `\n\nOriginally posted on Hive at ${hiveLink}\n\nAuto cross-post via Hostr v${VERSION} (br) at https://github.com/crrdlx/hostr`;
+  console.log(`[Bridge] [Hive→Nostr] ℹ️ Footer: "${footer}"`);
+  const isTruncated = content.length > 380 - footer.length;
   if (isTruncated) {
-    console.log(`[Bridge] [Hive→Nostr] ✂️ Truncating content from ${content.length} to 380 chars`);
-    const suffix = `... read original post in full:\n${hiveLink}`;
-    content = content.substring(0, 380 - suffix.length) + suffix;
+    const suffix = `... read more`;
+    console.log(`[Bridge] [Hive→Nostr] ✂️ Truncating content from ${content.length} to ${380 - footer.length} chars with suffix: "${suffix}"`);
+    content = content.substring(0, 380 - suffix.length - footer.length) + suffix;
   }
-  content += `\n\nOriginally posted on Hive at ${hiveLink}${footer}`;
+  content += footer;
   const postData = { content, permlink: post.permlink };
   if (!hiveToNostrQueue.some(item => item.permlink === post.permlink)) {
     hiveToNostrQueue.push(postData);
@@ -544,8 +548,8 @@ async function postToNostr(post) {
         await pool.publish([relay], signedEvent);
         successfulRelays.push(relay);
         console.log(`[Bridge] [Hive→Nostr] ✅ Published to relay: ${relay}`);
-      } catch (error) {
-        console.warn(`[Bridge] [Hinostr] ⚠️ Failed to publish to relay ${relay}: ${error.message || 'Unknown error'}`);
+      } catch (err) {
+        console.warn(`[Bridge] [Hive→Nostr] ⚠️ Failed to publish to ${relay}: ${err.message || 'Unknown error'}`);
       }
     }
     if (successfulRelays.length < 3) {
@@ -554,7 +558,7 @@ async function postToNostr(post) {
     console.log(`[Bridge] [Hive→Nostr] ✅ Published to Nostr, event ID: ${signedEvent.id}, kind=1, relays: ${successfulRelays.join(', ')}`);
     return signedEvent;
   } catch (error) {
-    console.error('[Bridge] [Hive→Nostr] ❌ Error posting to Nostr:', error.message);
+    console.error(`[Bridge] [Hive→Nostr] ❌ Error posting to Nostr: ${error.message}`);
     throw error;
   }
 }
@@ -568,7 +572,7 @@ function keepAlive() {
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('[Bridge] ⚠️ Unhandled promise rejection:', reason.message || reason, reason.stack || '');
+  console.error(`[Bridge] ⚠️ Unhandled promise rejection: ${reason.message || reason}, ${reason.stack || ''}`);
   console.log('[Bridge] 🔄 Restarting bridge due to unhandled rejection...');
   setTimeout(start, 5000);
 });
@@ -581,7 +585,7 @@ async function start() {
     await Promise.all([listenToNostr(), pollHive()]);
     keepAlive();
   } catch (err) {
-    console.error('[Bridge] ❌ Error in bridge initialization:', err.message);
+    console.error(`[Bridge] ❌ Error in bridge initialization: ${err.message}`);
     setTimeout(start, TWO_MINUTES_MS);
   }
 }
@@ -595,8 +599,8 @@ process.on('SIGINT', () => {
 
 // Run the script
 start().catch((err) => {
-  console.error('[Bridge] ❌ Error starting bridge:', err.message);
+  console.error(`[Bridge] ❌ Error starting bridge: ${err.message}`);
   process.exit(1);
 });
 
-// bidirectional-bridge.js v0.1.38 Snaps+Longform
+// bidirectional-bridge.js v0.1.41 Snaps+Longform+Titles+FooterFix+NoRedundantLink
