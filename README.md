@@ -66,7 +66,7 @@ You don't want to over-post on Hive. To avoid over-posting, Hostr has two versio
 
 2.  **bidirectional-bridge.js**
 
-- Nostr➡️Hive - This script listens for both kind 1 (short form) and kind 30023 (long form) Nostr notes and bridges both over to Hive. Kind 1 Nostr short form notes are posted to Hive as PeakD Snaps. Kind 30023 Nostr long form notes are posted as top level Hive posts.
+- Nostr➡️Hive - This script listens for both kind 1 (short form) and kind 30023 (long form) Nostr notes and bridges both over to Hive. Kind 1 Nostr short form notes are posted to Hive as PeakD Snaps and Ecency Waves (alternates). Kind 30023 Nostr long form notes are posted as top level Hive posts.
 
 - Hive ➡️ Nostr - Same as above (380+ is truncated).
 

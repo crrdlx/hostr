@@ -1,14 +1,15 @@
-import 'dotenv/config';
-import { SimplePool, finalizeEvent, getPublicKey } from 'nostr-tools';
-import { Client, PrivateKey } from '@hiveio/dhive';
-import WebSocket from 'ws';
-import fs from 'fs';
-import { writeFileSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
+// bidirectional-longform.js v0.1.19
+const dotenv = require('dotenv').config();
+const { SimplePool, finalizeEvent, getPublicKey } = require('nostr-tools');
+const { Client, PrivateKey } = require('@hiveio/dhive');
+const WebSocket = require('ws');
+const fs = require('fs');
+const { writeFileSync } = require('fs');
+const { join } = require('path');
+const { tmpdir } = require('os');
 
 // Version constant
-const VERSION = '0.1.18';
+const VERSION = '0.1.19';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -161,22 +162,26 @@ async function processNostrToHiveQueue() {
   const post = nostrToHiveQueue.shift();
 
   try {
+    console.log(`[Longform] [Nostr→Hive] ℹ️ Processing event ${post.eventId}, kind=30023`);
     const result = await postToHive(post.content, post.eventId, post.tags);
     processedNostrEvents.add([post.eventId, Date.now()]);
     writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
     lastHivePostTime = Date.now();
     console.log(`[Longform] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining`);
   } catch (error) {
-    if (error.message?.includes('You may only post once every 5 minutes')) {
+    console.error(`[Longform] [Nostr→Hive] ❌ Error processing event ${post.eventId}:`, error.message);
+    if (error.message?.includes('You may only post once every 5 minutes') || error.message?.includes('ECONNRESET') || error.message?.includes('rate limit')) {
       nostrToHiveQueue.unshift(post);
-      console.log('[Longform] [Nostr→Hive] ⏱️ Rate limit hit, will try again after cooldown');
+      console.log('[Longform] [Nostr→Hive] ⏱️ Rate limit or network error, retrying after cooldown');
       setTimeout(processNostrToHiveQueue, FIVE_MINUTES_MS);
     } else {
-      console.error('[Longform] [Nostr→Hive] ❌ Error posting to Hive:', error.message);
+      processedNostrEvents.add([post.eventId, Date.now()]); // Mark as processed to avoid requeuing
+      writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
     }
   } finally {
     nostrToHivePosting = false;
     if (nostrToHiveQueue.length > 0) {
+      console.log(`[Longform] [Nostr→Hive] ℹ️ Scheduling next queue processing`);
       setTimeout(processNostrToHiveQueue, 100);
     }
   }
@@ -193,18 +198,22 @@ function queueNostrToHive(event) {
     console.log(`[Longform] [Nostr→Hive] ⏭️ Skipping Hive-originated event: kind=${event.kind}, id=${event.id}, content="${event.content}"`);
     return;
   }
+  if (event.kind !== 30023) {
+    console.log(`[Longform] [Nostr→Hive] ⏭️ Skipping unsupported event: kind=${event.kind}, id=${event.id}, content="${event.content.substring(0, 30)}..."`);
+    return;
+  }
   const post = { content: event.content, eventId: event.id, tags: event.tags };
   if (!nostrToHiveQueue.some(item => item.eventId === event.id)) {
     nostrToHiveQueue.push(post);
     console.log(`[Longform] [Nostr→Hive] 📥 Added to queue: kind=${event.kind}, id=${event.id}, age=${Math.floor(age/60)}m${age%60}s, content="${event.content.substring(0, 30)}..."`);
     console.log(`[Longform] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items waiting`);
-    processNostrToHiveQueue();
+    setTimeout(processNostrToHiveQueue, 0); // Force immediate processing
   }
 }
 
 async function postToHive(content, eventId, tags) {
   console.log(`[Longform] [Nostr→Hive] 📤 Attempting to post to Hive: content="${content.substring(0, 30)}..."`);
-  const permlink = Math.random().toString(36).substring(2);
+  const permlink = `hostr-longform-${Math.random().toString(36).substring(2)}`;
   const title = generateTitle(content, tags);
   const nostrLink = createNostrLink(eventId);
   const body = `${content}\n\nView the original article over on [Nostr](${nostrLink})\nAuto cross-post via Hostr v${VERSION} (lf) at https://github.com/crrdlx/hostr`;
@@ -316,7 +325,7 @@ async function pollHive() {
         continue;
       }
       if (isCrossPost(post.body)) {
-        console.log(`[Longform] [Hive→Nostr] ⏭️ Skipping Nostr-originated post: "${post.title}" (Permlink: ${post.permlink}), body="${post.body}"`);
+        console.log(`[Longform] [Hive→Nostr] ⏭️ Skipping Nostr-originated post: "${post.title}" (Permlink: ${permlink}), body="${post.body}"`);
         continue;
       }
       if (isRecentPost(post)) {
@@ -378,17 +387,19 @@ async function processHiveToNostrQueue() {
   const post = hiveToNostrQueue.shift();
 
   try {
+    console.log(`[Longform] [Hive→Nostr] ℹ️ Processing post: permlink=${post.permlink}`);
     await postToNostr(post);
     processedHivePermlinks.add([post.permlink, Date.now()]);
     writeJsonFileSync(PROCESSED_PERMLINKS_FILE, [...processedHivePermlinks]);
     console.log(`[Longform] [Hive→Nostr] 📊 Queue status: ${hiveToNostrQueue.length} items remaining`);
   } catch (error) {
-    console.error('[Longform] [Hive→Nostr] ❌ Error processing post:', error.message);
+    console.error(`[Longform] [Hive→Nostr] ❌ Error processing post ${post.permlink}:`, error.message);
     hiveToNostrQueue.unshift(post);
     setTimeout(processHiveToNostrQueue, TWO_MINUTES_MS);
   } finally {
     hiveToNostrPosting = false;
     if (hiveToNostrQueue.length > 0) {
+      console.log(`[Longform] [Hive→Nostr] ℹ️ Scheduling next queue processing`);
       setTimeout(processHiveToNostrQueue, 100);
     }
   }
@@ -404,9 +415,6 @@ function queueHiveToNostr(post) {
     console.log(`[Longform] [Hive→Nostr] ⏭️ Skipping already processed post: "${post.title}" (Permlink: ${post.permlink})`);
     return;
   }
-  processedHivePermlinks.add([post.permlink, Date.now()]);
-  writeJsonFileSync(PROCESSED_PERMLINKS_FILE, [...processedHivePermlinks]);
-  console.log(`[Longform] [Hive→Nostr] ℹ️ Added permlink to processed: ${post.permlink}, new size: ${processedHivePermlinks.size}`);
   console.log(`[Longform] [Hive→Nostr] ℹ️ Raw post body length: ${post.body.length} chars`);
   const cleanedBody = cleanContent(post.body);
   console.log(`[Longform] [Hive→Nostr] ℹ️ Cleaned post body length: ${cleanedBody.length} chars`);
@@ -415,27 +423,34 @@ function queueHiveToNostr(post) {
   let content = plainBody;
   const hiveLink = createHiveLink(post.permlink);
   const footer = `\n\nAuto cross-post via Hostr v${VERSION} (lf) at https://hostr-home.vercel.app`;
-  const isTruncated = content.length > 380;
+  let summary = content.substring(0, 280);
+  const isTruncated = content.length > 280;
   if (isTruncated) {
-    console.log(`[Longform] [Hive→Nostr] ✂️ Truncating content from ${content.length} to 380 chars`);
+    console.log(`[Longform] [Hive→Nostr] ✂️ Truncating summary from ${content.length} to 280 chars`);
     const suffix = `... read original post in full:\n${hiveLink}`;
-    content = content.substring(0, 380 - suffix.length) + suffix;
+    summary = content.substring(0, 280 - suffix.length) + suffix;
   }
   content += `\n\nOriginally posted on Hive at ${hiveLink}${footer}`;
-  const postData = { content, permlink: post.permlink };
+  const postData = { content, permlink: post.permlink, title: post.title || 'Untitled', summary };
   if (!hiveToNostrQueue.some(item => item.permlink === post.permlink)) {
     hiveToNostrQueue.push(postData);
     console.log(`[Longform] [Hive→Nostr] 📥 Added to queue: "${post.title}" (Permlink: ${post.permlink})`);
     console.log(`[Longform] [Hive→Nostr] 📊 Queue status: ${hiveToNostrQueue.length} items waiting`);
-    processHiveToNostrQueue();
+    setTimeout(processHiveToNostrQueue, 0); // Force immediate processing
   }
 }
 
 async function postToNostr(post) {
   console.log(`[Longform] [Hive→Nostr] 📤 Attempting to post to Nostr: "${post.content.substring(0, 30)}..."`);
-  const tags = [['t', 'hostr']];
+  const tags = [
+    ['t', 'hostr'],
+    ['t', 'longform'],
+    ['title', post.title],
+    ['summary', post.summary],
+    ['hive-permlink', post.permlink]
+  ];
   const event = {
-    kind: 1,
+    kind: 30023,
     created_at: Math.floor(Date.now() / 1000),
     tags,
     content: post.content,
@@ -457,7 +472,7 @@ async function postToNostr(post) {
     if (successfulRelays.length < 3) {
       throw new Error(`Failed to publish to at least 3 relays; successful: ${successfulRelays.join(', ')}`);
     }
-    console.log(`[Longform] [Hive→Nostr] ✅ Published to Nostr, event ID: ${signedEvent.id}, kind=1, relays: ${successfulRelays.join(', ')}`);
+    console.log(`[Longform] [Hive→Nostr] ✅ Published to Nostr, event ID: ${signedEvent.id}, kind=30023, relays: ${successfulRelays.join(', ')}`);
     return signedEvent;
   } catch (error) {
     console.error('[Longform] [Hive→Nostr] ❌ Error posting to Nostr:', error.message);
@@ -504,3 +519,5 @@ start().catch((err) => {
   console.error('[Longform] ❌ Error starting bridge:', err.message);
   process.exit(1);
 });
+
+// bidirectional-longform.js v0.1.19
