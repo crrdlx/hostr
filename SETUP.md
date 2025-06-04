@@ -103,6 +103,12 @@ Or:
 ```bash
 node  bidirectional-bridge.js
 ```
+Note, an error might throw about "Common JavaScript" and type:modules. If so, change the file extension to .cjs and start with node bidirectional-bridge.cjs:
+```
+cd ~/hostr
+mv bidirectional-bridge.js bidirectional-bridge.cjs
+node bidirectional-bridge.cjs
+```
 - You should see:
 ```
 Starting bidirectional bridge for Hive user: your_hive_username, Nostr pubkey: your_nostr_public_key
