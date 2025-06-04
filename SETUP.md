@@ -103,7 +103,7 @@ Or:
 ```bash
 node  bidirectional-bridge.js
 ```
-Note, an error might throw about "Common JavaScript" and type:modules. If so, change the file extension to .cjs and start with node bidirectional-bridge.cjs:
+Note, an error might throw about "CommonJS script" and "type": "module". If so, change the file extension to .cjs and start with node bidirectional-bridge.cjs:
 ```
 cd ~/hostr
 mv bidirectional-bridge.js bidirectional-bridge.cjs
