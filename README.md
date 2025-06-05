@@ -32,7 +32,7 @@ I feel the #1 reason a Nostr user might wish to use this bridge is *to permanent
 
 3.  **Unlimited posting**. Nostr is not held back by posting or activity limitations, such as with Resource Credits or community norms that frown on posting too often.
 
-4. Even more **censorship resistance**. Hive is truly censorship-free in that posted content, no matter the content, does indeed posted. However, front ends can choose to show or not show content that the community has downvoted. Nostr is more free speech or censorship resistant...you post it, it's posted. (Relays can choose to relay it or not, accept it or reject it, but you could run your own relay.)
+4. Even more **censorship resistance**. Hive is truly censorship-free in that posted content, no matter the content, does indeed get posted. However, front ends can choose to show or not show content that the community has downvoted. Nostr is more free speech or censorship resistant...you post it, it's posted. (Relays can choose to relay it or not, accept it or reject it, but you could run your own relay.)
 
 5. Help **grow Hive**. Every post that bridges over to Nostr will have a footer saying something like, “This post originated on Hive,” with a link back to your Hive blockchain post. This brings wider exposure to Hive.
 
@@ -50,7 +50,7 @@ I feel the #1 reason a Nostr user might wish to use this bridge is *to permanent
 
 **If you’re unfamiliar with Hive, it has more quirks:**
 
-- Hive has five private keys, yes, five. Each has a specific purpose. From least powerful to most powerful, they are: posting key (to post), active key (to move tokens), owner key (to do anything), memo key (to dm/pm), and backup/master private key (to totally restore all keys). Don’t worry about all the keys. For Hostr, we only deal with posting notes/posts, so the *posting key* is all we deal with.
+- Hive has five private keys, yes, five. Each has a specific purpose. From least powerful to most powerful, they are: posting key (to post), active key (to move tokens), owner key (to do anything), memo key (to dm/pm), and backup/master private key (to totally restore all keys). Don’t worry about all the keys. For Hostr, we're merely posting notes/posts, so the *posting key* is all we deal with.
 
 - Hive has a culture of frowning on posting too often. Doing so can be seen as trying to milk the HIVE/HBD rewards that you gain from upvotes. Too much posting can be viewed as spamming and result in downvotes (this hurts your Web-of-Trust score, called “reputation” on Hive, and is shown alongside your username; you want to grow and keep your reputation up). The chain also has a 5-minute cool-down rule coded in: after posting, you cannot post for another five minutes.
 
