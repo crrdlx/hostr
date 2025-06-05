@@ -118,9 +118,9 @@ Starting bidirectional bridge for Hive user: your_hive_username, Nostr pubkey: y
 [Hive→Nostr] 🔍 Checking for new Hive posts...
 ```
 - Test it:
-- In [nostrudel.ninja](https://nostrudel.ninja) or your Nostr client of choice, post a Nostr note. Use relays like `wss://nos.lol` or `wss://nostr.wine`. It should appear on Hive ([peakd.com/@your_hive_username](https://peakd.com)) shortly.
-- Post on Hive via [peakd.com](https://peakd.com) or your Hive front end of choice. It should appear on Nostr ([nostrudel.ninja](https://nostrudel.ninja)) shortly.
-- Stop: Press `Ctrl+C`.
+- In [nostrudel.ninja](https://nostrudel.ninja) or your Nostr client of choice, post a Nostr note. Use relays like `wss://nos.lol` or `wss://nostr.wine`. It should appear on Hive ([peakd.com/@your_hive_username](https://peakd.com)) shortly. If it's short form, look in PeakD Snaps or Ecency Waves at https://peakd.com/@your_hive_username/snaps/snaps or https://peakd.com/@your_hive_username/snaps/waves
+- Post on Hive via [peakd.com](https://peakd.com) or your Hive front end of choice. It should appear on Nostr ([nostrudel.ninja](https://nostrudel.ninja)) shortly, as in a minute or two.
+- Stop the bridge: Press `Ctrl+C`.
 
 If tests work, stick with your chosen bridge. Just remember community posting norms on Hive. You don't want to post too often there (see the README.md).
 
