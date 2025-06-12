@@ -1,4 +1,4 @@
-// bidirectional-bridge.js v0.1.52 Snaps+Waves+Longform
+// bidirectional-bridge.js v0.1.61 Snaps+Waves+Longform
 const { SimplePool, finalizeEvent, getPublicKey } = require('nostr-tools');
 const { Client, PrivateKey } = require('@hiveio/dhive');
 const fs = require('fs');
@@ -16,12 +16,12 @@ console.log = (...args) => {
   logStream.write(message + '\n');
   originalConsoleLog(message);
 };
-console.log('Debug: Starting bidirectional-bridge.js v0.1.52');
+console.log('Debug: Starting bidirectional-bridge.js v0.1.61');
 console.log('Debug: Node.js version:', process.version);
 console.log('Debug: Logging initialized');
 
 // Version constant
-const VERSION = '0.1.52';
+const VERSION = '0.1.61';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -48,7 +48,7 @@ const relays = [
   'wss://relay.snort.social',
   'wss://nostr.wine',
   'wss://relay.nostr.band',
-  'wss://nostr.md',
+  'wss://nostr.mom',
   'wss://offchain.pub',
   'wss://relay.primal.net',
   'wss://nostr.oxtr.dev',
@@ -60,8 +60,8 @@ const pool = new SimplePool();
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 const TWO_MINUTES_MS = 2 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-const MAX_SNAPS_PER_DAY = 10;
-const MAX_LONGFORM_PER_DAY = 5;
+const MAX_SHORTFORM_PER_DAY = 12;
+const MAX_LONGFORM_PER_DAY = 2;
 let lastHivePostTime = 0;
 let dailySnapCount = 0;
 let dailyLongformCount = 0;
@@ -112,7 +112,7 @@ function resetDailyCounts() {
     dailySnapCount = 0;
     dailyLongformCount = 0;
     lastSnapDay = today;
-    console.log('[Bridge] 📅 Reset daily Snap and longform counts');
+    console.log('[Bridge] 📅 Reset daily Shortform and longform counts');
   }
 }
 
@@ -250,8 +250,8 @@ async function processNostrToHiveQueue() {
   }
 
   resetDailyCounts();
-  if (dailySnapCount >= MAX_SNAPS_PER_DAY && dailyLongformCount >= MAX_LONGFORM_PER_DAY) {
-    console.log(`[Bridge] [Nostr→Hive] ⏳ Daily limits reached (Snaps: ${MAX_SNAPS_PER_DAY}, Longform: ${MAX_LONGFORM_PER_DAY}), waiting until tomorrow...`);
+  if (dailySnapCount >= MAX_SHORTFORM_PER_DAY && dailyLongformCount >= MAX_LONGFORM_PER_DAY) {
+    console.log(`[Bridge] [Nostr→Hive] ⏳ Daily limits reached (Snaps: ${MAX_SHORTFORM_PER_DAY}, Longform: ${MAX_LONGFORM_PER_DAY}), waiting until tomorrow...`);
     setTimeout(processNostrToHiveQueue, 24 * 60 * 60 * 1000);
     return;
   }
@@ -269,8 +269,8 @@ async function processNostrToHiveQueue() {
 
   try {
     if (post.kind === 1) {
-      if (dailySnapCount >= MAX_SNAPS_PER_DAY) {
-        console.log(`[Bridge] [Nostr→Hive] ⏳ Daily Snap limit (${MAX_SNAPS_PER_DAY}) reached, skipping kind 1...`);
+      if (dailySnapCount >= MAX_SHORTFORM_PER_DAY) {
+        console.log(`[Bridge] [Nostr→Hive] ⏳ ap limit (${MAX_SHORTFORM_PER_DAY}) reached, skipping kind 1...`);
         nostrToHiveQueue.unshift(post);
         setTimeout(processNostrToHiveQueue, TWO_MINUTES_MS);
         return;
@@ -298,7 +298,7 @@ async function processNostrToHiveQueue() {
       lastFrontEnd = frontEnd;
       lastHivePostTime = Date.now();
       console.log(`[Bridge] [Nostr→Hive] ✅ Switched to front-end: ${lastFrontEnd}, event ${post.eventId}`);
-      console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SNAPS_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}, Posted to: ${frontEnd}`);
+      console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SHORTFORM_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}, Posted to: ${frontEnd}`);
     } else if (post.kind === 30023) {
       if (dailyLongformCount >= MAX_LONGFORM_PER_DAY) {
         console.log(`[Bridge] [Nostr→Hive] ⏳ Daily longform limit (${MAX_LONGFORM_PER_DAY}) reached, skipping kind 30023...`);
@@ -312,7 +312,7 @@ async function processNostrToHiveQueue() {
       writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
       dailyLongformCount++;
       lastHivePostTime = Date.now();
-      console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SNAPS_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}`);
+      console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SHORTFORM_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}`);
     }
   } catch (error) {
     console.error(`[Bridge] [Nostr→Hive] ❌ Error processing event ${post.eventId}:`, error.message);
@@ -365,7 +365,7 @@ async function postToHive(content, eventId, containerPermlink, frontEnd) {
   console.log(`[Bridge] [Nostr→Hive] 📤 Attempting to post to Hive ${frontEnd}: content="${content.substring(0, 30)}..."`);
   const permlink = `hostr-${frontEnd}-${Math.random().toString(36).substring(2)}`;
   const nostrLink = createNostrLink(eventId);
-  const body = `${content}\n\nView the original post over on [Nostr](${nostrLink})\nAuto cross-post via Hostr v${VERSION} (br) at https://hostr-home.vercel.app`;
+  const body = `${content}\n\nAuto-bridged via Hostr v${VERSION} (br) at https://hostr-home.vercel.app, view original post on [Nostr](${nostrLink}).`;
   const jsonMetadata = JSON.stringify({ 
     tags: ['hostr', `hostr-${frontEnd}`], 
     app: `hostr-${frontEnd}/1.0` 
@@ -694,7 +694,7 @@ async function postToNostr(post) {
 // Keep process alive
 function keepAlive() {
   setInterval(() => {
-    console.log('[Bridge] 🕖 Heartbeat: Still listening for events...');
+    console.log('[Bridge] 🕒 Heartbeat: Still listening for events...');
   }, 60 * 1000);
 }
 
@@ -731,4 +731,4 @@ process.on('SIGINT', () => {
 // Run the script
 start();
 
-// bidirectional-bridge.js v0.1.52 Snaps+Waves+Longform
+// bidirectional-bridge.js v0.1.61 Snaps+Waves+Longform
