@@ -1,4 +1,4 @@
-// bidirectional-bridge.js v0.1.61 Snaps+Waves+Longform
+// bidirectional-bridge.cjs v0.1.63 Snaps+Waves+Longform
 const { SimplePool, finalizeEvent, getPublicKey } = require('nostr-tools');
 const { Client, PrivateKey } = require('@hiveio/dhive');
 const fs = require('fs');
@@ -16,12 +16,12 @@ console.log = (...args) => {
   logStream.write(message + '\n');
   originalConsoleLog(message);
 };
-console.log('Debug: Starting bidirectional-bridge.js v0.1.61');
+console.log('Debug: Starting bidirectional-bridge.cjs v0.1.63');
 console.log('Debug: Node.js version:', process.version);
 console.log('Debug: Logging initialized');
 
 // Version constant
-const VERSION = '0.1.61';
+const VERSION = '0.1.63';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -352,6 +352,11 @@ function queueNostrToHive(event) {
     console.log(`[Bridge] [Nostr→Hive] ⏭️ Skipping kind 1 comment: id=${event.id}, age=${Math.floor(age/60)}m ${age%60}s, content="${event.content.substring(0, 30)}..."`);
     return;
   }
+  // Check for .hostr keyword to skip the post for both kind 1 and 30023
+  if (event.content.includes('.hostr')) {
+    console.log(`[Bridge] [Nostr→Hive] ⏭️ Skipping event due to .hostr keyword: kind=${event.kind}, id=${event.id}, age=${Math.floor(age/60)}m${age%60}s, content="${event.content.substring(0, 30)}..."`);
+    return;
+  }
   const post = { content: event.content, eventId: event.id, kind: event.kind, tags: event.tags };
   if (!nostrToHiveQueue.some(item => item.eventId === event.id)) {
     nostrToHiveQueue.push(post);
@@ -365,7 +370,7 @@ async function postToHive(content, eventId, containerPermlink, frontEnd) {
   console.log(`[Bridge] [Nostr→Hive] 📤 Attempting to post to Hive ${frontEnd}: content="${content.substring(0, 30)}..."`);
   const permlink = `hostr-${frontEnd}-${Math.random().toString(36).substring(2)}`;
   const nostrLink = createNostrLink(eventId);
-  const body = `${content}\n\nAuto-bridged via Hostr v${VERSION} (br) at https://hostr-home.vercel.app, view original post on [Nostr](${nostrLink}).`;
+  const body = `${content}\n\nBridged via [Hostr v${VERSION}(br)](https://hostr-home.vercel.app), view [original on Nostr](${nostrLink}).`;
   const jsonMetadata = JSON.stringify({ 
     tags: ['hostr', `hostr-${frontEnd}`], 
     app: `hostr-${frontEnd}/1.0` 
@@ -399,7 +404,7 @@ async function postLongformToHive(content, eventId, tags) {
   const permlink = `hostr-longform-${Math.random().toString(36).substring(2)}`;
   const title = generateTitle(content, tags);
   const nostrLink = createNostrLink(eventId);
-  const body = `${content}\n\nView the original article over on [Nostr](${nostrLink})\nAuto cross-post via Hostr v${VERSION} (lf)`;
+  const body = `${content}\n\nBridged via [Hostr v${VERSION}(br)](https://hostr-home.vercel.app), view [original on Nostr](${nostrLink}).`;
   const jsonMetadata = JSON.stringify({
     tags: ['hostr', 'longform'],
     app: 'hostr-longform/1.0'
@@ -483,78 +488,83 @@ async function listenToNostr() {
 
 // --- Hive-to-Nostr Functions ---
 
-async function pollHive() {
-  try {
-    console.log('[Bridge] [Hive→Nostr] 🔍 Checking for new Hive posts...');
-    const posts = await fetchRecentHivePosts();
-    console.log(`[Bridge] [Hive→Nostr] ℹ️ Found ${posts.length} posts`);
-    const sortedPosts = [...posts].sort((a, b) => 
-      new Date(a.created + 'Z').getTime() - new Date(b.created + 'Z').getTime()
-    );
-    let newPostsFound = 0;
-
-    for (const post of sortedPosts) {
-      console.log(`[Bridge] [Hive→Nostr] ℹ️ Processing post: author=${post.author}, title="${post.title}", permlink=${post.permlink}, created=${post.created}, parent_author=${post.parent_author || ''}`);
-      if (post.author !== HIVE_USERNAME) {
-        console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping post from ${post.author} (not ${HIVE_USERNAME})`);
-        continue;
-      }
-      if (post.parent_author) {
-        console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping comment: "${post.title || 'Untitled'}" (Permlink: ${post.permlink})`);
-        continue;
-      }
-      if (!post.body) {
-        console.log(`[Bridge] [Hive→Nostr] ⚠️ Skipping post with missing body: "${post.title || 'Untitled'}" (Permlink: ${post.permlink})`);
-        continue;
-      }
-      if (isCrossPost(post.body)) {
-        console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping Nostr-originated post: "${post.title}" (Permlink: ${post.permlink}), body="${post.body}"`);
-        continue;
-      }
-      if (isRecentPost(post)) {
-        console.log(`[Bridge] [Hive→Nostr] 📝 Found recent Hive post: "${post.title}"`);
-        queueHiveToNostr(post);
-        newPostsFound++;
-      }
-    }
-
-    if (newPostsFound === 0) {
-      console.log('[Bridge] [Hive→Nostr] 📭 No new posts found');
-    }
-  } catch (error) {
-    console.error('[Bridge] [Hive→Nostr] ❌ Error polling Hive:', error.message);
-  }
-  setTimeout(pollHive, TWO_MINUTES_MS);
-}
-
 async function fetchRecentHivePosts() {
   try {
-    const query = {
-      tag: HIVE_USERNAME,
-      limit: 10,
-      truncate_body: 0,
-    };
-    console.log(`[Bridge] [Hive→Nostr] 🔍 Fetching posts with query: ${JSON.stringify(query)}`);
-    const posts = await hiveClient.database.getDiscussions('blog', query);
-    console.log(`[Bridge] [Hive→Nostr] ℹ️ API returned ${posts.length} posts: ${JSON.stringify(posts.map(p => ({ author: p.author, permlink: p.permlink, title: p.title, created: p.created })))}`);
-    return posts;
+    // First get the active container permlinks
+    const [snapContainerPermlink, wavesContainerPermlink] = await Promise.all([
+      getActiveSnapContainer(),
+      getActiveWavesContainer()
+    ]);
+
+    if (!snapContainerPermlink && !wavesContainerPermlink) {
+      console.log('[Bridge] [Hive→Nostr] ⚠️ No active container posts found');
+      return [];
+    }
+
+    console.log(`[Bridge] [Hive→Nostr] 🔍 Active containers:
+      - Snaps: ${snapContainerPermlink || 'none'}
+      - Waves: ${wavesContainerPermlink || 'none'}`);
+
+    // Fetch only comments to active containers
+    const containerComments = await Promise.all([
+      // Only fetch Snaps comments if we have an active container
+      snapContainerPermlink ? hiveClient.database.getDiscussions('comments', {
+        tag: HIVE_USERNAME,
+        limit: 10,
+        truncate_body: 0,
+        filter_tags: ['peak.snaps'],
+        select_authors: [HIVE_USERNAME],
+        select_tags: [snapContainerPermlink]
+      }) : [],
+      // Only fetch Waves comments if we have an active container
+      wavesContainerPermlink ? hiveClient.database.getDiscussions('comments', {
+        tag: HIVE_USERNAME,
+        limit: 10,
+        truncate_body: 0,
+        filter_tags: ['ecency.waves'],
+        select_authors: [HIVE_USERNAME],
+        select_tags: [wavesContainerPermlink]
+      }) : []
+    ]);
+
+    const [snapComments, wavesComments] = containerComments;
+    
+    // Filter comments to ensure they are direct replies to the container posts
+    const filteredSnapComments = snapComments.filter(comment => 
+      comment.parent_author === 'peak.snaps' && 
+      comment.parent_permlink === snapContainerPermlink
+    );
+    
+    const filteredWavesComments = wavesComments.filter(comment => 
+      comment.parent_author === 'ecency.waves' && 
+      comment.parent_permlink === wavesContainerPermlink
+    );
+    
+    console.log(`[Bridge] [Hive→Nostr] ℹ️ Found:
+      - ${filteredSnapComments.length} comments to active Snaps container
+      - ${filteredWavesComments.length} comments to active Waves container`);
+
+    // Combine and sort all container comments
+    const allContent = [...filteredSnapComments, ...filteredWavesComments].sort((a, b) => 
+      new Date(a.created + 'Z').getTime() - new Date(b.created + 'Z').getTime()
+    );
+
+    // Log detailed info about what we found
+    console.log(`[Bridge] [Hive→Nostr] 📋 Found container comments:`, 
+      allContent.map(p => ({
+        type: p.parent_author === 'peak.snaps' ? 'Snaps' : 'Waves',
+        author: p.author,
+        permlink: p.permlink,
+        parent_permlink: p.parent_permlink,
+        created: p.created
+      }))
+    );
+
+    return allContent;
   } catch (error) {
-    console.error('[Bridge] [Hive→Nostr] ❌ Error fetching Hive posts:', error.message);
+    console.error('[Bridge] [Hive→Nostr] ❌ Error fetching container comments:', error.message);
     return [];
   }
-}
-
-function isRecentPost(post) {
-  const postTime = new Date(post.created + 'Z').getTime();
-  const now = Date.now();
-  const age = now - postTime;
-  const isRecent = age < FIVE_MINUTES_MS;
-  if (!isRecent) {
-    const minutes = Math.floor(age / 60000);
-    const seconds = Math.floor((age % 60000) / 1000);
-    console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping old post (${minutes}m ${seconds}s old): "${post.title}"`);
-  }
-  return isRecent;
 }
 
 async function processHiveToNostrQueue() {
@@ -604,34 +614,22 @@ function queueHiveToNostr(post) {
   console.log(`[Bridge] [Hive→Nostr] ℹ Plain text body length: ${plainBody.length} chars`);
   let content = plainBody;
   const hiveLink = createHiveLink(post.author, post.permlink);
-  const footerBase = `\n\nAuto cross-post via Hostr v${VERSION} (br) at https://hostr-home.vercel.app`;
-  const nonTruncatedFooter = `\n\nOriginally posted on Hive at ${hiveLink}`;
-  let jsonMetadata;
-  try {
-    jsonMetadata = JSON.parse(post.json_metadata || '{}');
-    console.log(`[Bridge] [Hive→Nostr] ℹ JSON metadata tags: ${jsonMetadata.tags ? jsonMetadata.tags.join(', ') : 'none'}`);
-  } catch (e) {
-    console.warn(`[Bridge] [Hive→Nostr] ⚠️ Invalid json_metadata for ${post.permlink}: ${e.message}`);
-    jsonMetadata = {};
-  }
-  const isLongform = jsonMetadata.tags?.includes('longform') || false;
-  console.log(`[Bridge] [Hive→Nostr] ℹ isLongform: ${isLongform} (based on tags: ${jsonMetadata.tags?.includes('longform')})`);
-  let summary = isLongform ? content.substring(0, 280) : null;
+  const footerBase = `\n\nBridged via Hostr v${VERSION}(br) at https://hostr-home.vercel.app`;
   let suffix = '';
   if (!isLongform) {
-    const maxContentLength = 380 - footerBase.length - nonTruncatedFooter.length;
+    const maxContentLength = 380 - footerBase.length - 24; // Adjusted for new footer length "[...](...)"
     const isTruncated = content.length > maxContentLength;
     if (isTruncated) {
-      suffix = `\n\n... read more in the original post on Hive at ${hiveLink}`;
+      suffix = `\n\n... read more in the [original on Hive](${hiveLink})`;
       content = content.substring(0, 380 - suffix.length - footerBase.length - 3) + '...' + suffix;
       console.log(`[Bridge] [Hive→Nostr] ✂️ Truncated content to ${content.length} chars with suffix: "${suffix}"`);
     } else {
-      content += nonTruncatedFooter;
-      console.log(`[Bridge] [Hive→Nostr] ℹ Added non-truncated footer: "${nonTruncatedFooter}"`);
+      content += `\n\nBridged via [Hostr v${VERSION}(br)](https://hostr-home.vercel.app), view [original on Hive](${hiveLink})`;
+      console.log(`[Bridge] [Hive→Nostr] ℹ Added non-truncated footer: "Bridged via [Hostr v${VERSION}(br)](https://hostr-home.vercel.app), view [original on Hive](${hiveLink})"`);
     }
     content += footerBase;
   } else {
-    content += nonTruncatedFooter + footerBase;
+    content += `\n\nBridged via [Hostr v${VERSION}(br)](https://hostr-home.vercel.app), view [original on Hive](${hiveLink})` + footerBase;
   }
   console.log(`[Bridge] [Hive→Nostr] ℹ Final content length: ${content.length} chars`);
   const postData = { 
@@ -731,4 +729,60 @@ process.on('SIGINT', () => {
 // Run the script
 start();
 
-// bidirectional-bridge.js v0.1.61 Snaps+Waves+Longform
+// bidirectional-bridge.cjs v0.1.63 Snaps+Waves+Longform
+// Added support for bridging Snaps and Waves container post comments to Nostr as kind 1
+// Updated N2H and H2N footers for consistency with Bridged via [Hostr vX.X.XX(br)](https://hostr-home.vercel.app), view [original on Nostr/Hive] links
+
+async function pollHive() {
+  try {
+    console.log('[Bridge] [Hive→Nostr] 🔍 Checking for new Hive posts...');
+    const posts = await fetchRecentHivePosts();
+    console.log(`[Bridge] [Hive→Nostr] ℹ️ Found ${posts.length} posts`);
+    
+    for (const post of posts) {
+      console.log(`[Bridge] [Hive→Nostr] ℹ️ Processing post: author=${post.author}, permlink=${post.permlink}, created=${post.created}, parent_author=${post.parent_author || ''}, parent_permlink=${post.parent_permlink}`);
+      
+      // Skip if not from our user
+      if (post.author !== HIVE_USERNAME) {
+        console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping post from ${post.author} (not ${HIVE_USERNAME})`);
+        continue;
+      }
+
+      // Skip if missing body
+      if (!post.body) {
+        console.log(`[Bridge] [Hive→Nostr] ⚠️ Skipping post with missing body: "${post.title || 'Untitled'}" (Permlink: ${post.permlink})`);
+        continue;
+      }
+
+      // Skip if it's a cross-post
+      if (isCrossPost(post.body)) {
+        console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping Nostr-originated post: "${post.title}" (Permlink: ${post.permlink})`);
+        continue;
+      }
+
+      // Skip if contains .hostr keyword
+      if (post.body.includes('.hostr') || (post.title && post.title.includes('.hostr'))) {
+        console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping post due to .hostr keyword: "${post.title}" (Permlink: ${post.permlink})`);
+        continue;
+      }
+
+      // Check if it's a recent post
+      const postTime = new Date(post.created + 'Z').getTime();
+      const now = Date.now();
+      const age = now - postTime;
+      if (age >= FIVE_MINUTES_MS) {
+        console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping old post (${Math.floor(age/60000)}m ${Math.floor((age%60000)/1000)}s old): "${post.title || 'Untitled'}"`);
+        continue;
+      }
+
+      // Queue the post for processing
+      queueHiveToNostr(post);
+    }
+  } catch (error) {
+    console.error('[Bridge] [Hive→Nostr] ❌ Error polling Hive:', error.message);
+  }
+  
+  // Schedule next poll
+  setTimeout(pollHive, TWO_MINUTES_MS);
+}
+// bidirectional-bridge.cjs v0.1.63 Snaps+Waves+Longform
