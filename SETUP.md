@@ -2,6 +2,10 @@
 
 Hostr, Nostr <--> Hive bridge: [https://github.com/crrdlx/hostr](https://github.com/crrdlx/hostr)
 
+## Note: if this is too "techy"...
+
+Check out the PWA "konetik" at https://konetik.vercel.app - you can post to Nostr and bridge to Hive from a simple web interface.
+
 ## What You’ll Need
 
 - A computer or server with Ubuntu. Ideally, Hostr will run 24/7, so a VPS or dedicated device (like a Raspberry Pi) is ideal. Hostr was set up using Ubuntu 24.04.

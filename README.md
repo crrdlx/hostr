@@ -6,6 +6,8 @@
 
 Hostr is a bidirectional bridge between [Nostr](https://nostr.com/) and [Hive](https://hive.io). What you post on one is automatically cross-posted to the other. (See [SETUP.md](https://github.com/crrdlx/hostr/blob/main/SETUP.md) if you want to jump right in and run it.)
 
+Alternately, check out the PWA "konetik" at https://konetik.vercel.app - you can post to Nostr and bridge to Hive from a simple web interface.
+
 >*This is experimental. Expect that there will be glitches, errors, and corrections to be made. So, consider it very beta, with no guarantees, and use at your own risk.*
 
 Nostr and Hive have differences, mainly, Nostr is a *protocol* and Hive is a *blockchain*. Nostr does not have a token, although bitcoin is much-loved and used across Nostr. Hive has two main tokens: HIVE and the HBD stablecoin. More importantly, Nostr and Hive have similarities. Both are decentralized and censorship resistant thanks to users owning and controlling their own private keys.
