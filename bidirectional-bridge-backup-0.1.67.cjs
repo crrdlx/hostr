@@ -1,4 +1,4 @@
-// bidirectional-bridge.cjs v0.1.63 Snaps+Waves+Longform
+// bidirectional-bridge.cjs v0.1.67 Snaps+Waves+Longform
 const { SimplePool, finalizeEvent, getPublicKey } = require('nostr-tools');
 const { Client, PrivateKey } = require('@hiveio/dhive');
 const fs = require('fs');
@@ -16,12 +16,12 @@ console.log = (...args) => {
   logStream.write(message + '\n');
   originalConsoleLog(message);
 };
-console.log('Debug: Starting bidirectional-bridge.cjs v0.1.63');
+console.log('Debug: Starting bidirectional-bridge.cjs v0.1.67');
 console.log('Debug: Node.js version:', process.version);
 console.log('Debug: Logging initialized');
 
 // Version constant
-const VERSION = '0.1.63';
+const VERSION = '0.1.67';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -73,6 +73,8 @@ let hiveToNostrPosting = false;
 let activeSnapContainer = { permlink: null, created: null };
 let activeWavesContainer = { permlink: null, created: null };
 let lastFrontEnd = 'snaps';
+const frontEnds = ['snaps', 'waves'];
+let frontEndIndex = 0;
 const PROCESSED_PERMLINKS_FILE = 'processed_permlinks_shortform.json';
 const PROCESSED_EVENTS_FILE = 'processed_nostr_events_shortform.json';
 let processedHivePermlinks = new Set(fs.existsSync(PROCESSED_PERMLINKS_FILE) ? JSON.parse(fs.readFileSync(PROCESSED_PERMLINKS_FILE)) : []);
@@ -269,36 +271,53 @@ async function processNostrToHiveQueue() {
 
   try {
     if (post.kind === 1) {
-      if (dailySnapCount >= MAX_SHORTFORM_PER_DAY) {
-        console.log(`[Bridge] [Nostr→Hive] ⏳ ap limit (${MAX_SHORTFORM_PER_DAY}) reached, skipping kind 1...`);
-        nostrToHiveQueue.unshift(post);
-        setTimeout(processNostrToHiveQueue, TWO_MINUTES_MS);
-        return;
-      }
-      console.log(`[Bridge] [Nostr→Hive] ℹ️ Processing event ${post.eventId}, kind=1, current front-end: ${lastFrontEnd}`);
-      let containerPermlink;
-      let frontEnd;
-      if (lastFrontEnd === 'snaps') {
-        containerPermlink = await getActiveWavesContainer();
-        frontEnd = 'waves';
+      const charCount = post.content.length;
+      console.log(`[DEBUG] Nostr note content (${charCount} chars): "${post.content.substring(0, 50)}${charCount > 50 ? '...' : ''}"`);
+
+      if (charCount >= 485) {
+        // Top-level Hive post logic (ACTIVE)
+        try {
+          await postToHiveAsTopLevel(post);
+          console.log(`[Bridge] [Nostr→Hive] ✅ Posted as top-level Hive post (over 485 chars)`);
+        } catch (err) {
+          console.error('[Bridge] [Nostr→Hive] ❌ Error posting as top-level Hive post:', err);
+        }
       } else {
-        containerPermlink = await getActiveSnapContainer();
-        frontEnd = 'snaps';
+        if (dailySnapCount >= MAX_SHORTFORM_PER_DAY) {
+          console.log(`[Bridge] [Nostr→Hive] ⏳ ap limit (${MAX_SHORTFORM_PER_DAY}) reached, skipping kind 1...`);
+          nostrToHiveQueue.unshift(post);
+          setTimeout(processNostrToHiveQueue, TWO_MINUTES_MS);
+          return;
+        }
+        // --- Alternation logic ---
+        let frontEnd = frontEnds[frontEndIndex];
+        let containerPermlink = null;
+        if (frontEnd === 'snaps') {
+          containerPermlink = await getActiveSnapContainer();
+        } else if (frontEnd === 'waves') {
+          containerPermlink = await getActiveWavesContainer();
+        }
+        // If container not found, don't advance index, just retry later
+        if (!containerPermlink) {
+          nostrToHiveQueue.unshift(post);
+          console.log(`[Bridge] [Nostr→Hive] ⏳ No active ${frontEnd} container, retrying in 2 minutes...`);
+          setTimeout(processNostrToHiveQueue, TWO_MINUTES_MS);
+          return;
+        }
+        // Advance index for next alternation
+        const nextFrontEnd = frontEnds[(frontEndIndex + 1) % frontEnds.length];
+        console.log(`[Bridge] [Nostr→Hive] Posted to: ${frontEnd}. Next will be: ${nextFrontEnd}`);
+        frontEndIndex = (frontEndIndex + 1) % frontEnds.length;
+        lastFrontEnd = frontEnd;
+
+        const result = await postToHive(post.content, post.eventId, containerPermlink, frontEnd);
+        processedNostrEvents.add([post.eventId, Date.now()]);
+        writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
+        dailySnapCount++;
+        lastHivePostTime = Date.now();
+        console.log(`[Bridge] [Nostr→Hive] ✅ Switched to front-end: ${lastFrontEnd}, event ${post.eventId}`);
+        console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SHORTFORM_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}, Posted to: ${frontEnd}`);
       }
-      if (!containerPermlink) {
-        nostrToHiveQueue.unshift(post);
-        console.log(`[Bridge] [Nostr→Hive] ⏳ No active ${frontEnd} container, retrying in 2 minutes...`);
-        setTimeout(processNostrToHiveQueue, TWO_MINUTES_MS);
-        return;
-      }
-      const result = await postToHive(post.content, post.eventId, containerPermlink, frontEnd);
-      processedNostrEvents.add([post.eventId, Date.now()]);
-      writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
-      dailySnapCount++;
-      lastFrontEnd = frontEnd;
-      lastHivePostTime = Date.now();
-      console.log(`[Bridge] [Nostr→Hive] ✅ Switched to front-end: ${lastFrontEnd}, event ${post.eventId}`);
-      console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SHORTFORM_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}, Posted to: ${frontEnd}`);
     } else if (post.kind === 30023) {
       if (dailyLongformCount >= MAX_LONGFORM_PER_DAY) {
         console.log(`[Bridge] [Nostr→Hive] ⏳ Daily longform limit (${MAX_LONGFORM_PER_DAY}) reached, skipping kind 30023...`);
@@ -370,7 +389,7 @@ async function postToHive(content, eventId, containerPermlink, frontEnd) {
   console.log(`[Bridge] [Nostr→Hive] 📤 Attempting to post to Hive ${frontEnd}: content="${content.substring(0, 30)}..."`);
   const permlink = `hostr-${frontEnd}-${Math.random().toString(36).substring(2)}`;
   const nostrLink = createNostrLink(eventId);
-  const body = `${content}\n\nBridged via [Hostr v${VERSION}(br)](https://hostr-home.vercel.app), view [original on Nostr](${nostrLink}).`;
+  const body = `${content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).`;
   const jsonMetadata = JSON.stringify({ 
     tags: ['hostr', `hostr-${frontEnd}`], 
     app: `hostr-${frontEnd}/1.0` 
@@ -404,7 +423,7 @@ async function postLongformToHive(content, eventId, tags) {
   const permlink = `hostr-longform-${Math.random().toString(36).substring(2)}`;
   const title = generateTitle(content, tags);
   const nostrLink = createNostrLink(eventId);
-  const body = `${content}\n\nBridged via [Hostr v${VERSION}(br)](https://hostr-home.vercel.app), view [original on Nostr](${nostrLink}).`;
+  const body = `${content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).`;
   const jsonMetadata = JSON.stringify({
     tags: ['hostr', 'longform'],
     app: 'hostr-longform/1.0'
@@ -613,8 +632,8 @@ function queueHiveToNostr(post) {
   const plainBody = stripMarkdown(cleanedBody);
   console.log(`[Bridge] [Hive→Nostr] ℹ Plain text body length: ${plainBody.length} chars`);
   let content = plainBody;
-  const hiveLink = createHiveLink(post.author, post.permlink);
-  const footerBase = `\n\nBridged via Hostr v${VERSION}(br) at https://hostr-home.vercel.app`;
+  const hiveLink = createHiveLink(post.author, permlink);
+  const footerBase = `\n\nBridged via Hostr at https://hostr-home.vercel.app`;
   let suffix = '';
   if (!isLongform) {
     const maxContentLength = 380 - footerBase.length - 24; // Adjusted for new footer length "[...](...)"
@@ -624,12 +643,12 @@ function queueHiveToNostr(post) {
       content = content.substring(0, 380 - suffix.length - footerBase.length - 3) + '...' + suffix;
       console.log(`[Bridge] [Hive→Nostr] ✂️ Truncated content to ${content.length} chars with suffix: "${suffix}"`);
     } else {
-      content += `\n\nBridged via [Hostr v${VERSION}(br)](https://hostr-home.vercel.app), view [original on Hive](${hiveLink})`;
-      console.log(`[Bridge] [Hive→Nostr] ℹ Added non-truncated footer: "Bridged via [Hostr v${VERSION}(br)](https://hostr-home.vercel.app), view [original on Hive](${hiveLink})"`);
+      content += `\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Hive](${hiveLink})`;
+      console.log(`[Bridge] [Hive→Nostr] ℹ Added non-truncated footer: "Bridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Hive](${hiveLink})"`);
     }
     content += footerBase;
   } else {
-    content += `\n\nBridged via [Hostr v${VERSION}(br)](https://hostr-home.vercel.app), view [original on Hive](${hiveLink})` + footerBase;
+    content += `\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Hive](${hiveLink})` + footerBase;
   }
   console.log(`[Bridge] [Hive→Nostr] ℹ Final content length: ${content.length} chars`);
   const postData = { 
@@ -729,9 +748,9 @@ process.on('SIGINT', () => {
 // Run the script
 start();
 
-// bidirectional-bridge.cjs v0.1.63 Snaps+Waves+Longform
+// bidirectional-bridge.cjs v0.1.67 Snaps+Waves+Longform
 // Added support for bridging Snaps and Waves container post comments to Nostr as kind 1
-// Updated N2H and H2N footers for consistency with Bridged via [Hostr vX.X.XX(br)](https://hostr-home.vercel.app), view [original on Nostr/Hive] links
+// Updated N2H and H2N footers for consistency with Bridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr/Hive] links
 
 async function pollHive() {
   try {
@@ -785,4 +804,4 @@ async function pollHive() {
   // Schedule next poll
   setTimeout(pollHive, TWO_MINUTES_MS);
 }
-// bidirectional-bridge.cjs v0.1.63 Snaps+Waves+Longform
+// bidirectional-bridge.cjs v0.1.67 Snaps+Waves+Longform
