@@ -15,12 +15,12 @@ console.log = (...args) => {
   logStream.write(message + '\n');
   originalConsoleLog(message);
 };
-console.log('Debug: Starting bidirectional-bridge.cjs v0.1.78');
+console.log('Debug: Starting bidirectional-bridge.cjs v0.1.79');
 console.log('Debug: Node.js version:', process.version);
 console.log('Debug: Logging initialized');
 
 // Version constant
-const VERSION = '0.1.78';
+const VERSION = '0.1.79';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -291,6 +291,11 @@ async function processNostrToHiveQueue() {
 
   try {
     if (post.kind === 1) {
+      // Prevent bounce-back of h2n-bridged notes
+      if (post.content.includes("Bridged via Hostr")) {
+        console.log("Skipping Nostr kind 1 note that originated from Hive (detected Hostr footer)");
+        return;
+      }
       const charCount = post.content.length;
       console.log(`[DEBUG] Nostr note content (${charCount} chars): "${post.content.substring(0, 50)}${charCount > 50 ? '...' : ''}"`);
 
@@ -755,7 +760,7 @@ process.on('SIGINT', () => {
 // Run the script
 start();
 
-// bidirectional-bridge.cjs v0.1.78 Snaps+Waves+Longform
+// bidirectional-bridge.cjs v0.1.79 Snaps+Waves+Longform
 async function pollHive() {
   try {
     console.log('[Bridge] [Hive→Nostr] 🔍 Checking for new Hive posts...');
@@ -808,4 +813,4 @@ async function pollHive() {
   // Schedule next poll
   setTimeout(pollHive, TWO_MINUTES_MS);
 }
-// bidirectional-bridge.cjs v0.1.78 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes
+// bidirectional-bridge.cjs v0.1.79 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
