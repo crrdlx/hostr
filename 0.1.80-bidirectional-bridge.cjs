@@ -1,3 +1,4 @@
+// bidirectional-bridge.cjs v0.1.80 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
 const { SimplePool, finalizeEvent, getPublicKey } = require('nostr-tools');
 const { Client, PrivateKey } = require('@hiveio/dhive');
 const fs = require('fs');
@@ -15,12 +16,12 @@ console.log = (...args) => {
   logStream.write(message + '\n');
   originalConsoleLog(message);
 };
-console.log('Debug: Starting bidirectional-bridge.cjs v0.1.79');
+console.log('Debug: Starting bidirectional-bridge.cjs v0.1.80');
 console.log('Debug: Node.js version:', process.version);
 console.log('Debug: Logging initialized');
 
 // Version constant
-const VERSION = '0.1.79';
+const VERSION = '0.1.80';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -185,7 +186,7 @@ function stripMarkdown(content) {
 }
 
 function isCrossPost(content) {
-  const regex = /auto\s*cross-post\s*(?:from\s*(?:hive|nostr)\s*)?via\s*hostr\s*(?:v[\d.]+)?\s*(?:\((?:br|lf)\))?|view\s*the\s*original\s*(?:post|article)\s*over\s*on\s*\[?nostr\]?|originally\s*posted\s*on\s*hive\s*at\s*https:\/\/(peakd|hive|ecency)\.com/i;
+  const regex = /auto\s*cross-post\s*(?:from\s*(?:hive|nostr)\s*)?via\s*hostr\s*(?:v[\d.]+)?\s*(?:\((?:br|lf)\))?|view\s*the\s*original\s*(?:post|article)\s*over\s*on\s*\[?nostr\]?|originally\s*posted\s*on\s*hive\s*at\s*https:\/\/(peakd|hive|ecency)\.com|nostr-bridge-id:\s*[a-z0-9]{4}/i;
   return regex.test(content);
 }
 
@@ -496,7 +497,12 @@ async function postToHiveAsTopLevel(post) {
   const title = generateTitle(post.content, post.tags);
   const permlink = `hostr-top-${Math.random().toString(36).substring(2)}`;
   const nostrLink = createNostrLink(post.eventId);
-  const body = `${post.content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).`;
+  const nostrIdShort = post.eventId ? String(post.eventId).slice(0, 4) : 'none';
+  const body = `${post.content}
+
+Bridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).
+
+nostr-bridge-id: ${nostrIdShort}`;
   const jsonMetadata = JSON.stringify({
     tags: ['hostr', 'longform'],
     app: 'hostr-longform/1.0'
@@ -760,7 +766,7 @@ process.on('SIGINT', () => {
 // Run the script
 start();
 
-// bidirectional-bridge.cjs v0.1.79 Snaps+Waves+Longform
+// bidirectional-bridge.cjs v0.1.80 Snaps+Waves+Longform
 async function pollHive() {
   try {
     console.log('[Bridge] [Hive→Nostr] 🔍 Checking for new Hive posts...');
@@ -813,4 +819,4 @@ async function pollHive() {
   // Schedule next poll
   setTimeout(pollHive, TWO_MINUTES_MS);
 }
-// bidirectional-bridge.cjs v0.1.79 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
+// bidirectional-bridge.cjs v0.1.80 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
