@@ -1,4 +1,3 @@
-// bidirectional-bridge.cjs v0.1.67 Snaps+Waves+Longform
 const { SimplePool, finalizeEvent, getPublicKey } = require('nostr-tools');
 const { Client, PrivateKey } = require('@hiveio/dhive');
 const fs = require('fs');
@@ -16,12 +15,12 @@ console.log = (...args) => {
   logStream.write(message + '\n');
   originalConsoleLog(message);
 };
-console.log('Debug: Starting bidirectional-bridge.cjs v0.1.67');
+console.log('Debug: Starting bidirectional-bridge.cjs v0.1.83');
 console.log('Debug: Node.js version:', process.version);
 console.log('Debug: Logging initialized');
 
 // Version constant
-const VERSION = '0.1.67';
+const VERSION = '0.1.83';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -129,44 +128,72 @@ function cleanContent(content) {
 
 function stripMarkdown(content) {
   let result = content;
-  // Images
-  result = result.replace(/!\[([^\]]*?)\]\(([^)]+)\)/g, '$2');
-  result = result.replace(/!\[([^\]]*?)\]/g, '');
-  result = result.replace(/!\[([^\]]*?)?/g, '');
-  // Headings
-  result = result.replace(/^#{1,6}\s*(.*)$/gm, '$1');
-  // Links
-  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$2');
+  
+  // Images - convert to direct URLs
+  result = result.replace(/!\[([^\]]*?)\]\(([^)]+)\)/g, '$2'); // ![alt](url) -> url
+  result = result.replace(/!\[([^\]]*?)\]/g, ''); // ![alt] -> empty
+  result = result.replace(/!\[([^\]]*?)?/g, ''); // ![alt -> empty
+  
+  // Headers
+  result = result.replace(/^#{1,6}\s*(.*)$/gm, '$1'); // # Header -> Header
+  
+  // Links - keep the URL
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$2'); // [text](url) -> url
+  
   // Bold and italic
-  result = result.replace(/\*\*([^*]+)\*\*/g, '$1');
-  result = result.replace(/__([^_]+)__/g, '$1');
-  result = result.replace(/\*([^*]+)\*/g, '$1');
-  result = result.replace(/_([^_]+)_/g, '$1');
+  result = result.replace(/\*\*([^*]+)\*\*/g, '$1'); // **bold** -> bold
+  result = result.replace(/__([^_]+)__/g, '$1'); // __bold__ -> bold
+  result = result.replace(/\*([^*]+)\*/g, '$1'); // *italic* -> italic
+  result = result.replace(/_([^_]+)_/g, '$1'); // _italic_ -> italic
+  
+  // Strikethrough
+  result = result.replace(/~~([^~]+)~~/g, '$1'); // ~~strikethrough~~ -> strikethrough
+  
   // Code blocks and inline code
-  result = result.replace(/```[^`]*```/g, '');
-  result = result.replace(/`([^`]+)`/g, '$1');
+  result = result.replace(/```[\s\S]*?```/g, ''); // ```code block``` -> empty
+  result = result.replace(/`([^`]+)`/g, '$1'); // `inline code` -> inline code
+  
   // Blockquotes
-  result = result.replace(/^>\s*(.*)$/gm, '$1');
+  result = result.replace(/^>\s*(.*)$/gm, '$1'); // > quote -> quote
+  
   // Lists
-  result = result.replace(/^[-*]\s*(.*)$/gm, '$1');
-  result = result.replace(/^\d+\.\s*(.*)$/gm, '$1');
+  result = result.replace(/^[-*+]\s*(.*)$/gm, '$1'); // - item -> item
+  result = result.replace(/^\d+\.\s*(.*)$/gm, '$1'); // 1. item -> item
+  
   // Horizontal rules
-  result = result.replace(/^[-*_]{3,}\s*$/gm, '');
-  // Tables
+  result = result.replace(/^[-*_]{3,}\s*$/gm, ''); // --- -> empty
+  
+  // Tables - convert to simple text
   result = result.replace(/^\|.*\|$/gm, (match) => {
     return match.replace(/\|/g, ' ').trim();
   });
-  result = result.replace(/^-+\|-+$/gm, '');
-  // Nested lists
-  result = result.replace(/^\s*[-*]\s*(.*)$/gm, '$1');
-  // Clean up extra newlines and trim
-  result = result.replace(/\n\s*\n/g, '\n').trim();
-  return result;
+  result = result.replace(/^-+\|-+$/gm, ''); // Remove table separators
+  
+  // Nested lists with indentation
+  result = result.replace(/^\s*[-*+]\s*(.*)$/gm, '$1'); //   - item -> item
+  result = result.replace(/^\s*\d+\.\s*(.*)$/gm, '$1'); //   1. item -> item
+  
+  // Remove HTML tags (in case any slip through)
+  result = result.replace(/<[^>]+>/g, '');
+  
+  // Clean up multiple newlines and spaces
+  result = result.replace(/\n\s*\n/g, '\n'); // Multiple newlines -> single
+  result = result.replace(/[ \t]+/g, ' '); // Multiple spaces -> single
+  result = result.replace(/\n\s+/g, '\n'); // Remove leading spaces after newlines
+  
+  return result.trim();
 }
 
-function isCrossPost(content) {
-  const regex = /auto\s*cross-post\s*(?:from\s*(?:hive|nostr)\s*)?via\s*hostr\s*(?:v[\d.]+)?\s*(?:\((?:br|lf)\))?|view\s*the\s*original\s*(?:post|article)\s*over\s*on\s*\[?nostr\]?|originally\s*posted\s*on\s*hive\s*at\s*https:\/\/(peakd|hive|ecency)\.com/i;
-  return regex.test(content);
+function isCrossPost(hivePost) {
+  // Check for marker in body
+  if (/nostr-bridge-id:\s*[0-9a-fA-F]{5}/.test(hivePost.body)) {
+    return true;
+  }
+  // Optionally, check json_metadata
+  if (hivePost.json_metadata && hivePost.json_metadata.nostr_bridge_id) {
+    return true;
+  }
+  return false;
 }
 
 function createNostrLink(eventId) {
@@ -271,20 +298,26 @@ async function processNostrToHiveQueue() {
 
   try {
     if (post.kind === 1) {
+      // Prevent bounce-back of h2n-bridged notes
+      if (post.content.includes("Bridged via Hostr")) {
+        console.log("Skipping Nostr kind 1 note that originated from Hive (detected Hostr footer)");
+        return;
+      }
       const charCount = post.content.length;
       console.log(`[DEBUG] Nostr note content (${charCount} chars): "${post.content.substring(0, 50)}${charCount > 50 ? '...' : ''}"`);
 
       if (charCount >= 485) {
-        // Top-level Hive post logic (ACTIVE)
-        try {
-          await postToHiveAsTopLevel(post);
-          console.log(`[Bridge] [Nostr→Hive] ✅ Posted as top-level Hive post (over 485 chars)`);
-        } catch (err) {
-          console.error('[Bridge] [Nostr→Hive] ❌ Error posting as top-level Hive post:', err);
-        }
+        // Top-level Hive post logic
+        const result = await postToHiveAsTopLevel(post);
+        processedNostrEvents.add([post.eventId, Date.now()]);
+        writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
+        dailyLongformCount++;
+        lastHivePostTime = Date.now();
+        console.log(`[Bridge] [Nostr→Hive] ✅ Posted as top-level Hive post (over 485 chars, ${charCount} chars)`);
+        console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SHORTFORM_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}`);
       } else {
         if (dailySnapCount >= MAX_SHORTFORM_PER_DAY) {
-          console.log(`[Bridge] [Nostr→Hive] ⏳ ap limit (${MAX_SHORTFORM_PER_DAY}) reached, skipping kind 1...`);
+          console.log(`[Bridge] [Nostr→Hive] ⏳ Snap limit (${MAX_SHORTFORM_PER_DAY}) reached, skipping kind 1...`);
           nostrToHiveQueue.unshift(post);
           setTimeout(processNostrToHiveQueue, TWO_MINUTES_MS);
           return;
@@ -335,13 +368,18 @@ async function processNostrToHiveQueue() {
     }
   } catch (error) {
     console.error(`[Bridge] [Nostr→Hive] ❌ Error processing event ${post.eventId}:`, error.message);
-    if (error.message?.includes('You may only post once every 5 minutes') || error.message?.includes('ECONNRESET') || error.message?.includes('rate limit')) {
+    if (error.message?.includes('You may only post once every 5 minutes') || error.message?.includes('rate limit')) {
       nostrToHiveQueue.unshift(post);
-      console.log('[Bridge] [Nostr→Hive] ⏱️ Rate limit or network error, retrying after cooldown');
+      console.log(`[Bridge] [Nostr→Hive] ⏱️ Rate limit hit, requeuing event ${post.eventId} for retry after cooldown`);
+      setTimeout(processNostrToHiveQueue, FIVE_MINUTES_MS);
+    } else if (error.message?.includes('ECONNRESET')) {
+      nostrToHiveQueue.unshift(post);
+      console.log(`[Bridge] [Nostr→Hive] ⏱️ Network error, requeuing event ${post.eventId} for retry after cooldown`);
       setTimeout(processNostrToHiveQueue, FIVE_MINUTES_MS);
     } else {
       processedNostrEvents.add([post.eventId, Date.now()]);
       writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
+      console.log(`[Bridge] [Nostr→Hive] ⚠️ Non-retryable error, marking event ${post.eventId} as processed to prevent retries`);
     }
   } finally {
     nostrToHivePosting = false;
@@ -359,16 +397,13 @@ function queueNostrToHive(event) {
     console.log(`[Bridge] [Nostr→Hive] ⏭️ Skipping already processed event: kind=${event.kind}, id=${event.id}, age=${Math.floor(age/60)}m${age%60}s, content="${event.content.substring(0, 30)}..."`);
     return;
   }
-  if (isCrossPost(event.content)) {
-    console.log(`[Bridge] [Nostr→Hive] ⏭️ Skipping Hive-originated event: kind=${event.kind}, id=${event.id}, content="${event.content}"`);
-    return;
-  }
   if (event.kind !== 1 && event.kind !== 30023) {
     console.log(`[Bridge] [Nostr→Hive] ⏸️ Skipping unsupported event: kind=${event.kind}, id=${event.id}, content="${event.content.substring(0, 30)}..."`);
     return;
   }
-  if (event.kind === 1 && event.tags.some(tag => tag[0] === 'e' || tag[0] === 'p')) {
-    console.log(`[Bridge] [Nostr→Hive] ⏭️ Skipping kind 1 comment: id=${event.id}, age=${Math.floor(age/60)}m ${age%60}s, content="${event.content.substring(0, 30)}..."`);
+  // Skip kind 1 events that are explicit replies (NIP-10 'e' tag with 'reply' marker)
+  if (event.kind === 1 && event.tags.some(tag => tag[0] === 'e' && tag[3] === 'reply')) {
+    console.log(`[Bridge] [Nostr→Hive] ⏭️ Skipping kind 1 reply: id=${event.id}, age=${Math.floor(age/60)}m ${age%60}s, content="${event.content.substring(0, 30)}...", tags=${JSON.stringify(event.tags)}`);
     return;
   }
   // Check for .hostr keyword to skip the post for both kind 1 and 30023
@@ -389,10 +424,20 @@ async function postToHive(content, eventId, containerPermlink, frontEnd) {
   console.log(`[Bridge] [Nostr→Hive] 📤 Attempting to post to Hive ${frontEnd}: content="${content.substring(0, 30)}..."`);
   const permlink = `hostr-${frontEnd}-${Math.random().toString(36).substring(2)}`;
   const nostrLink = createNostrLink(eventId);
-  const body = `${content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).`;
+  // Detect and separate image URLs
+  const imageRegex = /(https?:\/\/\S+\.(?:jpg|jpeg|png|gif|webp))/gi;
+  const images = content.match(imageRegex) || [];
+  let textContent = content;
+  images.forEach(image => {
+    textContent = textContent.replace(image, '').trim();
+  });
+  const imageSection = images.length > 0 ? `\n\n${images.join('\n')}` : '';
+  const nostrEventId = eventId ? String(eventId).slice(0, 5) : 'none';
+  const body = `${textContent}${imageSection}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).\n\nnostr-bridge-id: ${nostrEventId}`;
   const jsonMetadata = JSON.stringify({ 
     tags: ['hostr', `hostr-${frontEnd}`], 
-    app: `hostr-${frontEnd}/1.0` 
+    app: `hostr-${frontEnd}/1.0`,
+    nostr_bridge_id: nostrEventId
   });
 
   const postOp = {
@@ -423,10 +468,12 @@ async function postLongformToHive(content, eventId, tags) {
   const permlink = `hostr-longform-${Math.random().toString(36).substring(2)}`;
   const title = generateTitle(content, tags);
   const nostrLink = createNostrLink(eventId);
-  const body = `${content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).`;
+  const nostrEventId = eventId ? String(eventId).slice(0, 5) : 'none';
+  const body = `${content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).\n\nnostr-bridge-id: ${nostrEventId}`;
   const jsonMetadata = JSON.stringify({
     tags: ['hostr', 'longform'],
-    app: 'hostr-longform/1.0'
+    app: 'hostr-longform/1.0',
+    nostr_bridge_id: nostrEventId
   });
 
   const postOp = {
@@ -448,6 +495,44 @@ async function postLongformToHive(content, eventId, tags) {
     return result;
   } catch (error) {
     console.error('[Bridge] [Nostr→Hive] ❌ Error posting longform to Hive:', error.message);
+    throw error;
+  }
+}
+
+async function postToHiveAsTopLevel(post) {
+  console.log(`[Bridge] [Nostr→Hive] 📤 Attempting to post top-level to Hive: content="${post.content.substring(0, 30)}..."`);
+  const title = generateTitle(post.content, post.tags);
+  const permlink = `hostr-top-${Math.random().toString(36).substring(2)}`;
+  const nostrLink = createNostrLink(post.eventId);
+  const nostrEventId = post.eventId ? String(post.eventId).slice(0, 5) : 'none';
+  const body = `${post.content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).\n\nnostr-bridge-id: ${nostrEventId}`;
+  const jsonMetadata = JSON.stringify({
+    tags: ['hostr', 'longform'],
+    app: 'hostr-longform/1.0',
+    nostr_bridge_id: nostrEventId
+  });
+
+  const postOp = {
+    parent_author: '',
+    parent_permlink: 'hostr',
+    author: HIVE_USERNAME,
+    permlink,
+    title,
+    body,
+    json_metadata: jsonMetadata,
+  };
+
+  try {
+    const result = await hiveClient.broadcast.comment(
+      postOp,
+      PrivateKey.fromString(HIVE_POSTING_KEY)
+    );
+    console.log(`[Bridge] [Nostr→Hive] ✅ Posted as top-level Hive post: ${result.id}, Permlink: ${permlink}, Title: "${title}", Nostr Link: ${nostrLink}`);
+    processedNostrEvents.add([post.eventId, Date.now()]);
+    writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
+    return result;
+  } catch (error) {
+    console.error('[Bridge] [Nostr→Hive] ❌ Error posting as top-level Hive post:', error.message);
     throw error;
   }
 }
@@ -509,79 +594,10 @@ async function listenToNostr() {
 
 async function fetchRecentHivePosts() {
   try {
-    // First get the active container permlinks
-    const [snapContainerPermlink, wavesContainerPermlink] = await Promise.all([
-      getActiveSnapContainer(),
-      getActiveWavesContainer()
-    ]);
-
-    if (!snapContainerPermlink && !wavesContainerPermlink) {
-      console.log('[Bridge] [Hive→Nostr] ⚠️ No active container posts found');
-      return [];
-    }
-
-    console.log(`[Bridge] [Hive→Nostr] 🔍 Active containers:
-      - Snaps: ${snapContainerPermlink || 'none'}
-      - Waves: ${wavesContainerPermlink || 'none'}`);
-
-    // Fetch only comments to active containers
-    const containerComments = await Promise.all([
-      // Only fetch Snaps comments if we have an active container
-      snapContainerPermlink ? hiveClient.database.getDiscussions('comments', {
-        tag: HIVE_USERNAME,
-        limit: 10,
-        truncate_body: 0,
-        filter_tags: ['peak.snaps'],
-        select_authors: [HIVE_USERNAME],
-        select_tags: [snapContainerPermlink]
-      }) : [],
-      // Only fetch Waves comments if we have an active container
-      wavesContainerPermlink ? hiveClient.database.getDiscussions('comments', {
-        tag: HIVE_USERNAME,
-        limit: 10,
-        truncate_body: 0,
-        filter_tags: ['ecency.waves'],
-        select_authors: [HIVE_USERNAME],
-        select_tags: [wavesContainerPermlink]
-      }) : []
-    ]);
-
-    const [snapComments, wavesComments] = containerComments;
-    
-    // Filter comments to ensure they are direct replies to the container posts
-    const filteredSnapComments = snapComments.filter(comment => 
-      comment.parent_author === 'peak.snaps' && 
-      comment.parent_permlink === snapContainerPermlink
-    );
-    
-    const filteredWavesComments = wavesComments.filter(comment => 
-      comment.parent_author === 'ecency.waves' && 
-      comment.parent_permlink === wavesContainerPermlink
-    );
-    
-    console.log(`[Bridge] [Hive→Nostr] ℹ️ Found:
-      - ${filteredSnapComments.length} comments to active Snaps container
-      - ${filteredWavesComments.length} comments to active Waves container`);
-
-    // Combine and sort all container comments
-    const allContent = [...filteredSnapComments, ...filteredWavesComments].sort((a, b) => 
-      new Date(a.created + 'Z').getTime() - new Date(b.created + 'Z').getTime()
-    );
-
-    // Log detailed info about what we found
-    console.log(`[Bridge] [Hive→Nostr] 📋 Found container comments:`, 
-      allContent.map(p => ({
-        type: p.parent_author === 'peak.snaps' ? 'Snaps' : 'Waves',
-        author: p.author,
-        permlink: p.permlink,
-        parent_permlink: p.parent_permlink,
-        created: p.created
-      }))
-    );
-
-    return allContent;
+    const posts = await hiveClient.call('condenser_api', 'get_discussions_by_blog', [{ tag: HIVE_USERNAME, limit: 10 }]);
+    return posts;
   } catch (error) {
-    console.error('[Bridge] [Hive→Nostr] ❌ Error fetching container comments:', error.message);
+    console.error('[Bridge] [Hive→Nostr] ❌ Error fetching Hive posts:', error.message);
     return [];
   }
 }
@@ -614,7 +630,7 @@ async function processHiveToNostrQueue() {
 }
 
 function queueHiveToNostr(post) {
-  if (isCrossPost(post.body)) {
+  if (isCrossPost(post)) {
     console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping Nostr-originated post: "${post.title}" (Permlink: ${post.permlink})`);
     return;
   }
@@ -632,35 +648,49 @@ function queueHiveToNostr(post) {
   const plainBody = stripMarkdown(cleanedBody);
   console.log(`[Bridge] [Hive→Nostr] ℹ Plain text body length: ${plainBody.length} chars`);
   let content = plainBody;
-  const hiveLink = createHiveLink(post.author, permlink);
-  const footerBase = `\n\nBridged via Hostr at https://hostr-home.vercel.app`;
-  let suffix = '';
-  if (!isLongform) {
-    const maxContentLength = 380 - footerBase.length - 24; // Adjusted for new footer length "[...](...)"
-    const isTruncated = content.length > maxContentLength;
-    if (isTruncated) {
-      suffix = `\n\n... read more in the [original on Hive](${hiveLink})`;
-      content = content.substring(0, 380 - suffix.length - footerBase.length - 3) + '...' + suffix;
-      console.log(`[Bridge] [Hive→Nostr] ✂️ Truncated content to ${content.length} chars with suffix: "${suffix}"`);
-    } else {
-      content += `\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Hive](${hiveLink})`;
-      console.log(`[Bridge] [Hive→Nostr] ℹ Added non-truncated footer: "Bridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Hive](${hiveLink})"`);
+  const hiveLink = createHiveLink(post.author, post.permlink);
+  
+  // Determine if this is a longform post (top-level, not Actifit/d.buzz)
+  let isActifitOrDbuzz = false;
+  try {
+    const meta = typeof post.json_metadata === 'string'
+      ? JSON.parse(post.json_metadata)
+      : post.json_metadata;
+    const app = (meta && meta.app) ? meta.app.toLowerCase() : '';
+    if (app.includes('actifit') || app.includes('dbuzz') || app.includes('d.buzz')) {
+      isActifitOrDbuzz = true;
     }
-    content += footerBase;
-  } else {
-    content += `\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Hive](${hiveLink})` + footerBase;
+  } catch (e) {
+    // ignore parse errors
   }
+
+  const isLongform = post.parent_author === '' && !isActifitOrDbuzz;
+  
+  // Always post as kind 1, but with different footers based on content type
+  const maxContentLength = 380; // Leave room for footer
+  const isTruncated = content.length > maxContentLength;
+  
+  if (isTruncated) {
+    content = content.substring(0, maxContentLength - 50) + '...'; // Leave room for footer
+    console.log(`[Bridge] [Hive→Nostr] ✂️ Truncated content to ${content.length} chars`);
+  }
+  
+  // Add appropriate footer based on content type
+  if (isLongform) {
+    content += `\n\nBridged via Hostr at https://hostr-home.vercel.app. This'informations a long form post, read the full article at ${hiveLink}`;
+  } else {
+    content += `\n\nBridged via Hostr at https://hostr-home.vercel.app. Read the original at ${hiveLink}`;
+  }
+  
   console.log(`[Bridge] [Hive→Nostr] ℹ Final content length: ${content.length} chars`);
   const postData = { 
     content, 
     permlink: post.permlink, 
-    title: post.title || 'Untitled', 
-    summary,
-    isLongform 
+    title: post.title || 'Untitled'
   };
   if (!hiveToNostrQueue.some(item => item.permlink === post.permlink)) {
     hiveToNostrQueue.push(postData);
-    console.log(`[Bridge] [Hive→Nostr] 📥 Added to queue: "${post.title}" (Permlink: ${post.permlink}, Kind: ${isLongform ? '30023' : '1'})`);
+    console.log(`[Bridge] [Hive→Nostr] 📥 Added to queue: "${post.title}" (Permlink: ${post.permlink}, Kind: 1)`);
     console.log(`[Bridge] [Hive→Nostr] 📊 Queue status: ${hiveToNostrQueue.length} items waiting`);
     setTimeout(processHiveToNostrQueue, 0);
   }
@@ -668,17 +698,9 @@ function queueHiveToNostr(post) {
 
 async function postToNostr(post) {
   console.log(`[Bridge] [Hive→Nostr] 📤 Attempting to post to Nostr: "${post.content.substring(0, 30)}..."`);
-  const tags = post.isLongform 
-    ? [
-        ['t', 'hostr'],
-        ['t', 'longform'],
-        ['title', post.title],
-        ['summary', post.summary || post.content.substring(0, 280)],
-        ['hive-permlink', post.permlink]
-      ]
-    : [['t', 'hostr']];
+  const tags = [['t', 'hostr']]; // Only hostr tag, no longform tag
   const event = {
-    kind: post.isLongform ? 30023 : 1,
+    kind: 1, // Always kind 1
     created_at: Math.floor(Date.now() / 1000),
     tags,
     content: post.content,
@@ -700,7 +722,7 @@ async function postToNostr(post) {
     if (successfulRelays.length < 2) {
       throw new Error(`Failed to publish to at least 2 relays; successful: ${successfulRelays.join(', ')}`);
     }
-    console.log(`[Bridge] [Hive→Nostr] ✅ Published to Nostr, event ID: ${signedEvent.id}, kind=${post.isLongform ? 30023 : 1}, relays: ${successfulRelays.join(', ')}`);
+    console.log(`[Bridge] [Hive→Nostr] ✅ Published to Nostr, event ID: ${signedEvent.id}, kind=1, relays: ${successfulRelays.join(', ')}`);
     return signedEvent;
   } catch (error) {
     console.error('[Bridge] [Hive→Nostr] ❌ Error posting to Nostr:', error.message);
@@ -748,10 +770,6 @@ process.on('SIGINT', () => {
 // Run the script
 start();
 
-// bidirectional-bridge.cjs v0.1.67 Snaps+Waves+Longform
-// Added support for bridging Snaps and Waves container post comments to Nostr as kind 1
-// Updated N2H and H2N footers for consistency with Bridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr/Hive] links
-
 async function pollHive() {
   try {
     console.log('[Bridge] [Hive→Nostr] 🔍 Checking for new Hive posts...');
@@ -774,7 +792,7 @@ async function pollHive() {
       }
 
       // Skip if it's a cross-post
-      if (isCrossPost(post.body)) {
+      if (isCrossPost(post)) {
         console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping Nostr-originated post: "${post.title}" (Permlink: ${post.permlink})`);
         continue;
       }
@@ -804,4 +822,12 @@ async function pollHive() {
   // Schedule next poll
   setTimeout(pollHive, TWO_MINUTES_MS);
 }
-// bidirectional-bridge.cjs v0.1.67 Snaps+Waves+Longform
+// bidirectional-bridge.cjs v0.1.83 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
+// Fixed duplicate posting issue for kind 1 notes ≥485 chars by ensuring processedNostrEvents is updated in postToHiveAsTopLevel
+// Fixed isLongform and summary undefined in queueHiveToNostr
+// Corrected typo in processNostrToHiveQueue error log ('ap limit' → 'Snap limit')
+// Added consistent error handling for rate limits and network errors across all N2H posting paths
+// Updated postToHive to place image URLs above the footer for Snaps/Waves posts
+// Fixed regex syntax in stripMarkdown function to resolve SyntaxError: Unexpected token '^'
+// Added nostr-bridge-id to kind 30023 posts in postLongformToHive to prevent H2N bounce-back
+// Updated queueNostrToHive to only skip kind 1 posts with explicit 'reply' e-tags per NIP-10, allowing posts with p-tags or non-reply e-tags

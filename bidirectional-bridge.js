@@ -1,4 +1,3 @@
-// bidirectional-bridge.cjs v0.1.80 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
 const { SimplePool, finalizeEvent, getPublicKey } = require('nostr-tools');
 const { Client, PrivateKey } = require('@hiveio/dhive');
 const fs = require('fs');
@@ -16,12 +15,12 @@ console.log = (...args) => {
   logStream.write(message + '\n');
   originalConsoleLog(message);
 };
-console.log('Debug: Starting bidirectional-bridge.cjs v0.1.80');
+console.log('Debug: Starting bidirectional-bridge.cjs v0.1.83');
 console.log('Debug: Node.js version:', process.version);
 console.log('Debug: Logging initialized');
 
 // Version constant
-const VERSION = '0.1.80';
+const VERSION = '0.1.83';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -185,9 +184,16 @@ function stripMarkdown(content) {
   return result.trim();
 }
 
-function isCrossPost(content) {
-  const regex = /auto\s*cross-post\s*(?:from\s*(?:hive|nostr)\s*)?via\s*hostr\s*(?:v[\d.]+)?\s*(?:\((?:br|lf)\))?|view\s*the\s*original\s*(?:post|article)\s*over\s*on\s*\[?nostr\]?|originally\s*posted\s*on\s*hive\s*at\s*https:\/\/(peakd|hive|ecency)\.com|nostr-bridge-id:\s*[a-z0-9]{4}/i;
-  return regex.test(content);
+function isCrossPost(hivePost) {
+  // Check for marker in body
+  if (/nostr-bridge-id:\s*[0-9a-fA-F]{5}/.test(hivePost.body)) {
+    return true;
+  }
+  // Optionally, check json_metadata
+  if (hivePost.json_metadata && hivePost.json_metadata.nostr_bridge_id) {
+    return true;
+  }
+  return false;
 }
 
 function createNostrLink(eventId) {
@@ -310,40 +316,40 @@ async function processNostrToHiveQueue() {
         console.log(`[Bridge] [Nostr→Hive] ✅ Posted as top-level Hive post (over 485 chars, ${charCount} chars)`);
         console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SHORTFORM_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}`);
       } else {
-      if (dailySnapCount >= MAX_SHORTFORM_PER_DAY) {
+        if (dailySnapCount >= MAX_SHORTFORM_PER_DAY) {
           console.log(`[Bridge] [Nostr→Hive] ⏳ Snap limit (${MAX_SHORTFORM_PER_DAY}) reached, skipping kind 1...`);
-        nostrToHiveQueue.unshift(post);
-        setTimeout(processNostrToHiveQueue, TWO_MINUTES_MS);
-        return;
-      }
+          nostrToHiveQueue.unshift(post);
+          setTimeout(processNostrToHiveQueue, TWO_MINUTES_MS);
+          return;
+        }
         // --- Alternation logic ---
         let frontEnd = frontEnds[frontEndIndex];
         let containerPermlink = null;
         if (frontEnd === 'snaps') {
           containerPermlink = await getActiveSnapContainer();
         } else if (frontEnd === 'waves') {
-        containerPermlink = await getActiveWavesContainer();
-      }
+          containerPermlink = await getActiveWavesContainer();
+        }
         // If container not found, don't advance index, just retry later
-      if (!containerPermlink) {
-        nostrToHiveQueue.unshift(post);
-        console.log(`[Bridge] [Nostr→Hive] ⏳ No active ${frontEnd} container, retrying in 2 minutes...`);
-        setTimeout(processNostrToHiveQueue, TWO_MINUTES_MS);
-        return;
-      }
+        if (!containerPermlink) {
+          nostrToHiveQueue.unshift(post);
+          console.log(`[Bridge] [Nostr→Hive] ⏳ No active ${frontEnd} container, retrying in 2 minutes...`);
+          setTimeout(processNostrToHiveQueue, TWO_MINUTES_MS);
+          return;
+        }
         // Advance index for next alternation
         const nextFrontEnd = frontEnds[(frontEndIndex + 1) % frontEnds.length];
         console.log(`[Bridge] [Nostr→Hive] Posted to: ${frontEnd}. Next will be: ${nextFrontEnd}`);
         frontEndIndex = (frontEndIndex + 1) % frontEnds.length;
         lastFrontEnd = frontEnd;
 
-      const result = await postToHive(post.content, post.eventId, containerPermlink, frontEnd);
-      processedNostrEvents.add([post.eventId, Date.now()]);
-      writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
-      dailySnapCount++;
-      lastHivePostTime = Date.now();
-      console.log(`[Bridge] [Nostr→Hive] ✅ Switched to front-end: ${lastFrontEnd}, event ${post.eventId}`);
-      console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SHORTFORM_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}, Posted to: ${frontEnd}`);
+        const result = await postToHive(post.content, post.eventId, containerPermlink, frontEnd);
+        processedNostrEvents.add([post.eventId, Date.now()]);
+        writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
+        dailySnapCount++;
+        lastHivePostTime = Date.now();
+        console.log(`[Bridge] [Nostr→Hive] ✅ Switched to front-end: ${lastFrontEnd}, event ${post.eventId}`);
+        console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SHORTFORM_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}, Posted to: ${frontEnd}`);
       }
     } else if (post.kind === 30023) {
       if (dailyLongformCount >= MAX_LONGFORM_PER_DAY) {
@@ -391,16 +397,13 @@ function queueNostrToHive(event) {
     console.log(`[Bridge] [Nostr→Hive] ⏭️ Skipping already processed event: kind=${event.kind}, id=${event.id}, age=${Math.floor(age/60)}m${age%60}s, content="${event.content.substring(0, 30)}..."`);
     return;
   }
-  if (isCrossPost(event.content)) {
-    console.log(`[Bridge] [Nostr→Hive] ⏭️ Skipping Hive-originated event: kind=${event.kind}, id=${event.id}, content="${event.content}"`);
-    return;
-  }
   if (event.kind !== 1 && event.kind !== 30023) {
     console.log(`[Bridge] [Nostr→Hive] ⏸️ Skipping unsupported event: kind=${event.kind}, id=${event.id}, content="${event.content.substring(0, 30)}..."`);
     return;
   }
-  if (event.kind === 1 && event.tags.some(tag => tag[0] === 'e' || tag[0] === 'p')) {
-    console.log(`[Bridge] [Nostr→Hive] ⏭️ Skipping kind 1 comment: id=${event.id}, age=${Math.floor(age/60)}m ${age%60}s, content="${event.content.substring(0, 30)}..."`);
+  // Skip kind 1 events that are explicit replies (NIP-10 'e' tag with 'reply' marker)
+  if (event.kind === 1 && event.tags.some(tag => tag[0] === 'e' && tag[3] === 'reply')) {
+    console.log(`[Bridge] [Nostr→Hive] ⏭️ Skipping kind 1 reply: id=${event.id}, age=${Math.floor(age/60)}m ${age%60}s, content="${event.content.substring(0, 30)}...", tags=${JSON.stringify(event.tags)}`);
     return;
   }
   // Check for .hostr keyword to skip the post for both kind 1 and 30023
@@ -429,10 +432,12 @@ async function postToHive(content, eventId, containerPermlink, frontEnd) {
     textContent = textContent.replace(image, '').trim();
   });
   const imageSection = images.length > 0 ? `\n\n${images.join('\n')}` : '';
-  const body = `${textContent}${imageSection}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).`;
+  const nostrEventId = eventId ? String(eventId).slice(0, 5) : 'none';
+  const body = `${textContent}${imageSection}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).\n\nnostr-bridge-id: ${nostrEventId}`;
   const jsonMetadata = JSON.stringify({ 
     tags: ['hostr', `hostr-${frontEnd}`], 
-    app: `hostr-${frontEnd}/1.0` 
+    app: `hostr-${frontEnd}/1.0`,
+    nostr_bridge_id: nostrEventId
   });
 
   const postOp = {
@@ -463,10 +468,12 @@ async function postLongformToHive(content, eventId, tags) {
   const permlink = `hostr-longform-${Math.random().toString(36).substring(2)}`;
   const title = generateTitle(content, tags);
   const nostrLink = createNostrLink(eventId);
-  const body = `${content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).`;
+  const nostrEventId = eventId ? String(eventId).slice(0, 5) : 'none';
+  const body = `${content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).\n\nnostr-bridge-id: ${nostrEventId}`;
   const jsonMetadata = JSON.stringify({
     tags: ['hostr', 'longform'],
-    app: 'hostr-longform/1.0'
+    app: 'hostr-longform/1.0',
+    nostr_bridge_id: nostrEventId
   });
 
   const postOp = {
@@ -497,15 +504,12 @@ async function postToHiveAsTopLevel(post) {
   const title = generateTitle(post.content, post.tags);
   const permlink = `hostr-top-${Math.random().toString(36).substring(2)}`;
   const nostrLink = createNostrLink(post.eventId);
-  const nostrIdShort = post.eventId ? String(post.eventId).slice(0, 4) : 'none';
-  const body = `${post.content}
-
-Bridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).
-
-nostr-bridge-id: ${nostrIdShort}`;
+  const nostrEventId = post.eventId ? String(post.eventId).slice(0, 5) : 'none';
+  const body = `${post.content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).\n\nnostr-bridge-id: ${nostrEventId}`;
   const jsonMetadata = JSON.stringify({
     tags: ['hostr', 'longform'],
-    app: 'hostr-longform/1.0'
+    app: 'hostr-longform/1.0',
+    nostr_bridge_id: nostrEventId
   });
 
   const postOp = {
@@ -626,7 +630,7 @@ async function processHiveToNostrQueue() {
 }
 
 function queueHiveToNostr(post) {
-  if (isCrossPost(post.body)) {
+  if (isCrossPost(post)) {
     console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping Nostr-originated post: "${post.title}" (Permlink: ${post.permlink})`);
     return;
   }
@@ -664,16 +668,16 @@ function queueHiveToNostr(post) {
   
   // Always post as kind 1, but with different footers based on content type
   const maxContentLength = 380; // Leave room for footer
-    const isTruncated = content.length > maxContentLength;
+  const isTruncated = content.length > maxContentLength;
   
-    if (isTruncated) {
+  if (isTruncated) {
     content = content.substring(0, maxContentLength - 50) + '...'; // Leave room for footer
     console.log(`[Bridge] [Hive→Nostr] ✂️ Truncated content to ${content.length} chars`);
   }
   
   // Add appropriate footer based on content type
   if (isLongform) {
-    content += `\n\nBridged via Hostr at https://hostr-home.vercel.app. This is a long form post, read the full article at ${hiveLink}`;
+    content += `\n\nBridged via Hostr at https://hostr-home.vercel.app. This'informations a long form post, read the full article at ${hiveLink}`;
   } else {
     content += `\n\nBridged via Hostr at https://hostr-home.vercel.app. Read the original at ${hiveLink}`;
   }
@@ -766,7 +770,6 @@ process.on('SIGINT', () => {
 // Run the script
 start();
 
-// bidirectional-bridge.cjs v0.1.80 Snaps+Waves+Longform
 async function pollHive() {
   try {
     console.log('[Bridge] [Hive→Nostr] 🔍 Checking for new Hive posts...');
@@ -789,7 +792,7 @@ async function pollHive() {
       }
 
       // Skip if it's a cross-post
-      if (isCrossPost(post.body)) {
+      if (isCrossPost(post)) {
         console.log(`[Bridge] [Hive→Nostr] ⏭️ Skipping Nostr-originated post: "${post.title}" (Permlink: ${post.permlink})`);
         continue;
       }
@@ -819,4 +822,12 @@ async function pollHive() {
   // Schedule next poll
   setTimeout(pollHive, TWO_MINUTES_MS);
 }
-// bidirectional-bridge.cjs v0.1.80 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
+// bidirectional-bridge.cjs v0.1.83 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
+// Fixed duplicate posting issue for kind 1 notes ≥485 chars by ensuring processedNostrEvents is updated in postToHiveAsTopLevel
+// Fixed isLongform and summary undefined in queueHiveToNostr
+// Corrected typo in processNostrToHiveQueue error log ('ap limit' → 'Snap limit')
+// Added consistent error handling for rate limits and network errors across all N2H posting paths
+// Updated postToHive to place image URLs above the footer for Snaps/Waves posts
+// Fixed regex syntax in stripMarkdown function to resolve SyntaxError: Unexpected token '^'
+// Added nostr-bridge-id to kind 30023 posts in postLongformToHive to prevent H2N bounce-back
+// Updated queueNostrToHive to only skip kind 1 posts with explicit 'reply' e-tags per NIP-10, allowing posts with p-tags or non-reply e-tags
