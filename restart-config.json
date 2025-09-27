@@ -1,0 +1,26 @@
+{
+  "restart_intervals": {
+    "description": "How often to restart the bridge process",
+    "options": {
+      "6_hours": "Restart every 6 hours (4 times daily)",
+      "8_hours": "Restart every 8 hours (3 times daily)", 
+      "12_hours": "Restart every 12 hours (2 times daily)",
+      "24_hours": "Restart every 24 hours (1 time daily)"
+    },
+    "current": "6_hours"
+  },
+  "health_monitoring": {
+    "check_interval_minutes": 5,
+    "inactivity_timeout_minutes": 10,
+    "max_restart_attempts": 3
+  },
+  "logging": {
+    "bridge_log": "/tmp/hostr-bridge.log",
+    "restart_log": "/tmp/hostr-bridge-restart.log",
+    "pid_file": "/tmp/hostr-bridge.pid"
+  },
+  "tmux": {
+    "session_name": "hostr-bridge",
+    "auto_create_session": true
+  }
+}

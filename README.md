@@ -108,7 +108,20 @@ See the "Setting up..." section below to set up the bridge.
 
 ## Setting up the Hostr bridge
 
-To set up the bridge, see [SETUP.md](https://github.com/crrdlx/hostr/blob/main/SETUP.md) in the repo below. The Hostr bridge has a bit of technicals behind it, but don't get intimidated. Because technical things change, I’ll keep the technical how-to instructions housed at [https://github.com/crrdlx/hostr](https://github.com/crrdlx/hostr)
+To set up the bridge, see [SETUP.md](https://github.com/crrdlx/hostr/blob/main/SETUP.md) in the repo below. The Hostr bridge has a bit of technicals behind it, but don't get intimidated. Because technical things change, I'll keep the technical how-to instructions housed at [https://github.com/crrdlx/hostr](https://github.com/crrdlx/hostr)
+
+### Auto-Restart Functionality
+
+For production use, Hostr includes an **auto-restart system** that ensures your bridge stays running 24/7 with automatic recovery from crashes. The auto-restart system:
+
+- **Monitors bridge health** every 5 minutes
+- **Automatically restarts** if the bridge crashes or becomes unresponsive  
+- **Schedules periodic restarts** every 6 hours to prevent memory leaks
+- **Provides graceful shutdowns** to preserve data integrity
+- **Works with tmux** for better process management
+- **Logs all activity** for troubleshooting
+
+Simply run `./auto-restart.sh monitor` after setup to enable automatic monitoring and restart capabilities. See the [SETUP.md](https://github.com/crrdlx/hostr/blob/main/SETUP.md) for detailed setup instructions.
 
 ## Disclaimer
 

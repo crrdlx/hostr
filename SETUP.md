@@ -129,6 +129,8 @@ Starting bidirectional bridge for Hive user: your_hive_username, Nostr pubkey: y
 If tests work, stick with your chosen bridge. Just remember community posting norms on Hive. You don't want to post too often there (see the README.md).
 
 ### 6. Keep It Running
+
+#### Option A: Manual tmux (Simple)
 To run the bridge 24/7, use `tmux` (keeps it running even if you close the terminal).
 - Install tmux:
 ```bash
@@ -142,7 +144,7 @@ node  bidirectional-longform.js
 ```
 Or:
 ```bash
-node  bidirectional-shortform.js
+node  bidirectional-bridge.js
 ```
 - Detach (leave bridge running): Press `Ctrl+B`, then `D`.
 - Check current tmux sessions:
@@ -159,6 +161,54 @@ tmux  a  -t  hostr-bridge
 # Press Ctrl+C to stop
 # Press Ctrl+B, then D to detach
 ```
+
+#### Option B: Auto-Restart (Recommended)
+For production use, set up automatic restart functionality to ensure your bridge stays running and recovers from crashes.
+
+**Setup:**
+1. Make the auto-restart script executable:
+```bash
+chmod +x auto-restart.sh
+```
+
+2. Start the bridge with auto-restart monitoring:
+```bash
+./auto-restart.sh monitor
+```
+
+**What auto-restart does:**
+- **Monitors the bridge process** every 5 minutes for health
+- **Automatically restarts** if the bridge crashes or becomes unresponsive
+- **Scheduled restarts** every 6 hours to prevent memory leaks
+- **Graceful shutdowns** to preserve data integrity
+- **Logs all activity** to help with troubleshooting
+
+**Auto-restart commands:**
+```bash
+# Start monitoring (recommended)
+./auto-restart.sh monitor
+
+# Start bridge once
+./auto-restart.sh start
+
+# Check if bridge is running
+./auto-restart.sh status
+
+# Manually restart bridge
+./auto-restart.sh restart
+
+# Stop bridge
+./auto-restart.sh stop
+```
+
+**Benefits of auto-restart:**
+- Bridge automatically recovers from crashes
+- Prevents memory leaks with scheduled restarts
+- Monitors for unresponsive states
+- Works with tmux for better process management
+- Detailed logging for troubleshooting
+
+For detailed auto-restart configuration options, see `setup-auto-restart.md`.
 
 ### Tips
 -  **Hive Posting**: Hive allows one post every 5 minutes. The bridge queues posts to avoid spamming. Too many Hive posts can lead to downvotes and lower reputation, so build your reputation carefully. Use `bidirectional-longform.js` if you post often on Nostr.
