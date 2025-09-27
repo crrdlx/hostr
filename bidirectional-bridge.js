@@ -15,12 +15,12 @@ console.log = (...args) => {
   logStream.write(message + '\n');
   originalConsoleLog(message);
 };
-console.log('Debug: Starting bidirectional-bridge.cjs v0.1.84');
+console.log('Debug: Starting bidirectional-bridge.cjs v0.1.85');
 console.log('Debug: Node.js version:', process.version);
 console.log('Debug: Logging initialized');
 
 // Version constant
-const VERSION = '0.1.84';
+const VERSION = '0.1.85';
 
 // Set global WebSocket for nostr-tools
 global.WebSocket = WebSocket;
@@ -78,9 +78,6 @@ const PROCESSED_PERMLINKS_FILE = 'processed_permlinks_shortform.json';
 const PROCESSED_EVENTS_FILE = 'processed_nostr_events_shortform.json';
 let processedHivePermlinks = new Set(fs.existsSync(PROCESSED_PERMLINKS_FILE) ? JSON.parse(fs.readFileSync(PROCESSED_PERMLINKS_FILE)) : []);
 let processedNostrEvents = new Set(fs.existsSync(PROCESSED_EVENTS_FILE) ? JSON.parse(fs.readFileSync(PROCESSED_EVENTS_FILE)) : []);
-
-// Top-level post cooldown
-let topLevelCooldownEndTime = 0;
 
 // Atomic file write
 function writeJsonFileSync(filePath, data) {
@@ -310,22 +307,13 @@ async function processNostrToHiveQueue() {
       console.log(`[DEBUG] Nostr note content (${charCount} chars): "${post.content.substring(0, 50)}${charCount > 50 ? '...' : ''}"`);
 
       if (charCount >= 485) {
-        if (now < topLevelCooldownEndTime) {
-          const waitTime = topLevelCooldownEndTime - now;
-          console.log(`[Bridge] [Nostr→Hive] ⏳ Top-level post cooldown active, waiting ${Math.ceil(waitTime/1000)} seconds before posting...`);
-          nostrToHiveQueue.unshift(post);
-          setTimeout(processNostrToHiveQueue, waitTime);
-          return;
-        }
         // Top-level Hive post logic
         const result = await postToHiveAsTopLevel(post);
         processedNostrEvents.add([post.eventId, Date.now()]);
         writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
         dailyLongformCount++;
         lastHivePostTime = Date.now();
-        topLevelCooldownEndTime = Date.now() + FIVE_MINUTES_MS;
         console.log(`[Bridge] [Nostr→Hive] ✅ Posted as top-level Hive post (over 485 chars, ${charCount} chars)`);
-        console.log(`[Bridge] [Nostr→Hive] ⏱️ Started 5-minute cooldown for top-level posts`);
         console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SHORTFORM_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}`);
       } else {
         if (dailySnapCount >= MAX_SHORTFORM_PER_DAY) {
@@ -364,13 +352,6 @@ async function processNostrToHiveQueue() {
         console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SHORTFORM_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}, Posted to: ${frontEnd}`);
       }
     } else if (post.kind === 30023) {
-      if (now < topLevelCooldownEndTime) {
-        const waitTime = topLevelCooldownEndTime - now;
-        console.log(`[Bridge] [Nostr→Hive] ⏳ Top-level post cooldown active, waiting ${Math.ceil(waitTime/1000)} seconds before posting...`);
-        nostrToHiveQueue.unshift(post);
-        setTimeout(processNostrToHiveQueue, waitTime);
-        return;
-      }
       if (dailyLongformCount >= MAX_LONGFORM_PER_DAY) {
         console.log(`[Bridge] [Nostr→Hive] ⏳ Daily longform limit (${MAX_LONGFORM_PER_DAY}) reached, skipping kind 30023...`);
         nostrToHiveQueue.unshift(post);
@@ -383,9 +364,6 @@ async function processNostrToHiveQueue() {
       writeJsonFileSync(PROCESSED_EVENTS_FILE, [...processedNostrEvents]);
       dailyLongformCount++;
       lastHivePostTime = Date.now();
-      topLevelCooldownEndTime = Date.now() + FIVE_MINUTES_MS;
-      console.log(`[Bridge] [Nostr→Hive] ✅ Posted longform to Hive`);
-      console.log(`[Bridge] [Nostr→Hive] ⏱️ Started 5-minute cooldown for top-level posts`);
       console.log(`[Bridge] [Nostr→Hive] 📊 Queue status: ${nostrToHiveQueue.length} items remaining, Snaps today: ${dailySnapCount}/${MAX_SHORTFORM_PER_DAY}, Longform today: ${dailyLongformCount}/${MAX_LONGFORM_PER_DAY}`);
     }
   } catch (error) {
@@ -699,7 +677,7 @@ function queueHiveToNostr(post) {
   
   // Add appropriate footer based on content type
   if (isLongform) {
-    content += `\n\nBridged via Hostr at https://hostr-home.vercel.app. This is a long form post, read the full article at ${hiveLink}`;
+    content += `\n\nBridged via Hostr at https://hostr-home.vercel.app. This'informations a long form post, read the full article at ${hiveLink}`;
   } else {
     content += `\n\nBridged via Hostr at https://hostr-home.vercel.app. Read the original at ${hiveLink}`;
   }
@@ -844,7 +822,7 @@ async function pollHive() {
   // Schedule next poll
   setTimeout(pollHive, TWO_MINUTES_MS);
 }
-// bidirectional-bridge.cjs v0.1.84 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
+// bidirectional-bridge.cjs v0.1.85 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
 // Fixed duplicate posting issue for kind 1 notes ≥485 chars by ensuring processedNostrEvents is updated in postToHiveAsTopLevel
 // Fixed isLongform and summary undefined in queueHiveToNostr
 // Corrected typo in processNostrToHiveQueue error log ('ap limit' → 'Snap limit')
@@ -853,4 +831,3 @@ async function pollHive() {
 // Fixed regex syntax in stripMarkdown function to resolve SyntaxError: Unexpected token '^'
 // Added nostr-bridge-id to kind 30023 posts in postLongformToHive to prevent H2N bounce-back
 // Updated queueNostrToHive to only skip kind 1 posts with explicit 'reply' e-tags per NIP-10, allowing posts with p-tags or non-reply e-tags
-// Added 5-minute cooldown for top-level Hive posts after a successful post (for kind 30023 or kind 1 ≥485 chars) to prevent bounce-back issues
