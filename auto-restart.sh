@@ -9,8 +9,8 @@ SCRIPT_NAME="bidirectional-bridge.cjs"
 SESSION_NAME="hostr-bridge"
 RESTART_INTERVAL="6h"  # Restart every 6 hours (4 times daily)
 HEALTH_CHECK_INTERVAL="5m"  # Check every 5 minutes
-LOG_FILE="/var/log/hostr-bridge-restart.log"
-PID_FILE="/var/run/hostr-bridge.pid"
+LOG_FILE="/home/ubuntu/hostr/hostr-bridge-restart.log"
+PID_FILE="/home/ubuntu/hostr/hostr-bridge.pid"
 HEALTH_TIMEOUT="3h"  # Consider process dead if no activity for 3 hours
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -29,6 +29,7 @@ log() {
 # Check if process is running and responsive
 check_process_health() {
     if [ ! -f "$PID_FILE" ]; then
+        log "${RED}No PID file found, assuming process is not running${NC}"
         return 1
     fi
     
@@ -39,8 +40,8 @@ check_process_health() {
     fi
     
     # Check if the log file has been updated recently (indicating activity)
-    if [ -f "/var/log/hostr-bridge.log" ]; then
-        local last_activity=$(stat -c %Y "/var/log/hostr-bridge.log" 2>/dev/null || echo 0)
+    if [ -f "/tmp/hostr-bridge.log" ]; then
+        local last_activity=$(stat -c %Y "/tmp/hostr-bridge.log" 2>/dev/null || echo 0)
         local now=$(date +%s)
         local time_diff=$((now - last_activity))
         
@@ -48,6 +49,9 @@ check_process_health() {
             log "${YELLOW}Process appears unresponsive (no log activity for ${time_diff}s)${NC}"
             return 1
         fi
+    else
+        log "${YELLOW}Log file /tmp/hostr-bridge.log not found, assuming process is unresponsive${NC}"
+        return 1
     fi
     
     return 0
