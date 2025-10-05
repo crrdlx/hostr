@@ -1,16 +1,16 @@
 #!/bin/bash
 
+# auto-restart.sh v0.1.1
 # Auto-restart script for bidirectional-bridge.cjs
-# This script monitors the bridge process and restarts it if it becomes unresponsive
-# Designed to work with tmux sessions
+# Monitors the bridge process, restarts it if unresponsive, and displays live bridge logs
 
 # Configuration
 SCRIPT_NAME="bidirectional-bridge.cjs"
-SESSION_NAME="hostr-bridge"
 RESTART_INTERVAL="6h"  # Restart every 6 hours (4 times daily)
 HEALTH_CHECK_INTERVAL="5m"  # Check every 5 minutes
 LOG_FILE="/home/ubuntu/hostr/hostr-bridge-restart.log"
 PID_FILE="/home/ubuntu/hostr/hostr-bridge.pid"
+BRIDGE_LOG="/tmp/hostr-bridge.log"
 HEALTH_TIMEOUT="3h"  # Consider process dead if no activity for 3 hours
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -24,6 +24,27 @@ NC='\033[0m' # No Color
 # Logging function
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+}
+
+# Start tailing the bridge log file for live feedback
+start_log_tail() {
+    # Filter for relevant bridge messages (e.g., processing posts, errors, listening)
+    tail -f "$BRIDGE_LOG" | grep --line-buffered -E "\[Bridge\].*(Processing post|Error|Listening)" &
+    local tail_pid=$!
+    echo "$tail_pid" > "$PID_FILE.tail"
+    log "${BLUE}Started live log tail (PID: $tail_pid)${NC}"
+}
+
+# Stop tailing the bridge log file
+stop_log_tail() {
+    if [ -f "$PID_FILE.tail" ]; then
+        local tail_pid=$(cat "$PID_FILE.tail" 2>/dev/null)
+        if [ -n "$tail_pid" ] && kill -0 "$tail_pid" 2>/dev/null; then
+            kill -TERM "$tail_pid" 2>/dev/null
+            log "${YELLOW}Stopped live log tail (PID: $tail_pid)${NC}"
+        fi
+        rm -f "$PID_FILE.tail"
+    fi
 }
 
 # Check if process is running and responsive
@@ -40,8 +61,8 @@ check_process_health() {
     fi
     
     # Check if the log file has been updated recently (indicating activity)
-    if [ -f "/tmp/hostr-bridge.log" ]; then
-        local last_activity=$(stat -c %Y "/tmp/hostr-bridge.log" 2>/dev/null || echo 0)
+    if [ -f "$BRIDGE_LOG" ]; then
+        local last_activity=$(stat -c %Y "$BRIDGE_LOG" 2>/dev/null || echo 0)
         local now=$(date +%s)
         local time_diff=$((now - last_activity))
         
@@ -50,7 +71,7 @@ check_process_health() {
             return 1
         fi
     else
-        log "${YELLOW}Log file /tmp/hostr-bridge.log not found, assuming process is unresponsive${NC}"
+        log "${YELLOW}Log file $BRIDGE_LOG not found, assuming process is unresponsive${NC}"
         return 1
     fi
     
@@ -61,24 +82,14 @@ check_process_health() {
 start_bridge() {
     log "${BLUE}Starting $SCRIPT_NAME...${NC}"
     
-    # Create tmux session if it doesn't exist
-    if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-        tmux new-session -d -s "$SESSION_NAME"
-        log "Created new tmux session: $SESSION_NAME"
-    fi
+    cd "$SCRIPT_DIR"
+    node "$SCRIPT_NAME" > /dev/null 2>&1 &
+    local pid=$!
     
-    # Start the script in the tmux session
-    tmux send-keys -t "$SESSION_NAME" "cd $SCRIPT_DIR" Enter
-    tmux send-keys -t "$SESSION_NAME" "node $SCRIPT_NAME" Enter
-    
-    # Wait a moment for the process to start
-    sleep 5
-    
-    # Get the process ID and save it
-    local pid=$(tmux list-panes -t "$SESSION_NAME" -F "#{pane_pid}" | head -1)
     if [ -n "$pid" ]; then
         echo "$pid" > "$PID_FILE"
         log "${GREEN}Bridge started with PID: $pid${NC}"
+        start_log_tail
         return 0
     else
         log "${RED}Failed to start bridge - could not get PID${NC}"
@@ -89,6 +100,8 @@ start_bridge() {
 # Stop the bridge process
 stop_bridge() {
     log "${YELLOW}Stopping bridge process...${NC}"
+    
+    stop_log_tail
     
     if [ -f "$PID_FILE" ]; then
         local pid=$(cat "$PID_FILE" 2>/dev/null)
@@ -104,7 +117,7 @@ stop_bridge() {
     fi
     
     # Also try to kill any remaining node processes running the script
-    pkill -f "$SCRIPT_NAME" 2>/dev/null || true
+    pkill -f "node $SCRIPT_NAME" 2>/dev/null || true
     
     log "${GREEN}Bridge process stopped${NC}"
 }
@@ -187,3 +200,15 @@ case "${1:-monitor}" in
         exit 1
         ;;
 esac
+
+# auto-restart.sh v0.1.1
+# Monitors and restarts bidirectional-bridge.cjs if unresponsive
+# Runs process directly in the background without tmux
+# Uses user-writable paths for log and PID files
+# Displays live bridge logs filtered for processing, errors, and listening messages
+# Features:
+# - Periodic restarts every 6 hours
+# - Health checks every 5 minutes based on PID and log activity
+# - Graceful shutdown handling
+# - Color-coded logging
+# - Live feedback of bridge activity via tail
