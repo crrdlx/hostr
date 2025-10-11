@@ -15,12 +15,12 @@ console.log = (...args) => {
   logStream.write(message + '\n');
   originalConsoleLog(message);
 };
-console.log('Debug: Starting bidirectional-bridge.cjs v0.1.87');
+console.log('Debug: Starting bidirectional-bridge.cjs v0.1.88');
 console.log('Debug: Node.js version:', process.version);
 console.log('Debug: Logging initialized');
 
 // Version constant
-const VERSION = '0.1.87';
+const VERSION = '0.1.88';
 
 // Auto-restart configuration
 const LISTENING_LOG_INTERVAL_MS = 15 * 60 * 1000; // Log "listening" every 15 minutes
@@ -195,7 +195,7 @@ function stripMarkdown(content) {
 
 function isCrossPost(hivePost) {
   // Check for marker in body
-  if (/nostr-bridge-id:\s*[0-9a-fA-F]{5}/.test(hivePost.body)) {
+  if (/id:\s*[0-9a-fA-F]{5}/.test(hivePost.body)) {
     return true;
   }
   // Optionally, check json_metadata
@@ -443,7 +443,7 @@ async function postToHive(content, eventId, containerPermlink, frontEnd) {
   });
   const imageSection = images.length > 0 ? `\n\n${images.join('\n')}` : '';
   const nostrEventId = eventId ? String(eventId).slice(0, 5) : 'none';
-  const body = `${textContent}${imageSection}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).\n\nnostr-bridge-id: ${nostrEventId}`;
+  const body = `${textContent}${imageSection}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}). id: ${nostrEventId}`;
   const jsonMetadata = JSON.stringify({ 
     tags: ['hostr', `hostr-${frontEnd}`], 
     app: `hostr-${frontEnd}/1.0`,
@@ -479,7 +479,7 @@ async function postLongformToHive(content, eventId, tags) {
   const title = generateTitle(content, tags);
   const nostrLink = createNostrLink(eventId);
   const nostrEventId = eventId ? String(eventId).slice(0, 5) : 'none';
-  const body = `${content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).\n\nnostr-bridge-id: ${nostrEventId}`;
+  const body = `${content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}). id: ${nostrEventId}`;
   const jsonMetadata = JSON.stringify({
     tags: ['hostr', 'longform'],
     app: 'hostr-longform/1.0',
@@ -515,7 +515,7 @@ async function postToHiveAsTopLevel(post) {
   const permlink = `hostr-top-${Math.random().toString(36).substring(2)}`;
   const nostrLink = createNostrLink(post.eventId);
   const nostrEventId = post.eventId ? String(post.eventId).slice(0, 5) : 'none';
-  const body = `${post.content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}).\n\nnostr-bridge-id: ${nostrEventId}`;
+  const body = `${post.content}\n\nBridged via [Hostr](https://github.com/crrdlx/hostr), view [original on Nostr](${nostrLink}). id: ${nostrEventId}`;
   const jsonMetadata = JSON.stringify({
     tags: ['hostr', 'longform'],
     app: 'hostr-longform/1.0',
@@ -878,7 +878,7 @@ async function pollHive() {
   setTimeout(pollHive, TWO_MINUTES_MS);
 }
 
-// bidirectional-bridge.cjs v0.1.87 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
+// bidirectional-bridge.cjs v0.1.88 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
 // Fixed duplicate posting issue for kind 1 notes ≥485 chars by ensuring processedNostrEvents is updated in postToHiveAsTopLevel
 // Fixed isLongform and summary undefined in queueHiveToNostr
 // Added periodic "listening for new events" log every 15 minutes
