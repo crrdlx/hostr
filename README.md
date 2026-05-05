@@ -68,7 +68,7 @@ You don't want to over-post on Hive. To avoid over-posting, Hostr has two versio
 
 2.  **bidirectional-bridge.js**
 
-- Nostr➡️Hive - This script listens for both kind 1 (short form) and kind 30023 (long form) Nostr notes and bridges both over to Hive. Kind 1 Nostr short form notes are posted to Hive as PeakD Snaps and Ecency Waves (alternates). Kind 30023 Nostr long form notes are posted as top level Hive posts.
+- Nostr ➡️ Hive - This script listens for both kind 1 (short form) and kind 30023 (long form) Nostr notes and bridges both over to Hive. Kind 1 Nostr short form notes are posted to Hive as PeakD Snaps and Ecency Waves (alternates). Kind 30023 Nostr long form notes are posted as top level Hive posts.
 
 - Hive ➡️ Nostr - Same as above (380+ is truncated).
 
@@ -80,7 +80,7 @@ Which script version should I use?
 
 - If in doubt, **use this longform (lf) script**.
 
-3. If you post infrequently on Nostr (2 long form posts per day or fewer? A handful of short form posts per day?), the bidirectional-bridge.js (bridging both kinds 1 and 30023) might work fine for you.
+2. If you post infrequently on Nostr (2 long form posts per day or fewer? A handful of short form posts per day?), the bidirectional-bridge.js (bridging both kinds 1 and 30023) might work fine for you.
 
 ## Nostr users - how to begin
 
@@ -96,7 +96,7 @@ See the "Setting up..." section below to set up the bridge.
 
 ## Hive users - how to begin
 
-You’ll need a Nostr account. Getting a Nostr "account" is nothing more than generating keys. A simple way to do this is at [https://nstart.me](https://nstart.me) If you wish to dig into details, take a look at [http://nostrwiki.crrdlx.infinityfreeapp.com/doku.php?id=wiki:get-started](http://nostrwiki.crrdlx.infinityfreeapp.com/doku.php?id=wiki:get-started)
+You’ll need a Nostr account. Getting a Nostr "account" is nothing more than generating keys. A simple way to do this is at [https://nstart.me](https://nstart.me). If you wish to dig into details, take a look at [http://nostrwiki.crrdlx.infinityfreeapp.com/doku.php?id=wiki:get-started](http://nostrwiki.crrdlx.infinityfreeapp.com/doku.php?id=wiki:get-started)
 
 As with Hive, you simply need to safely store your private keys. On Nostr, your private key is called your “nsec” (sec, as in “secret”). Your public key is your “npub” (pub, as in "public"). Your nsec is all you need, but just so you know, your private key comes in two formats: (a) your nsec, and (b) the “hex” form (same key, just different forms). With the Hostr bridge, we’ll use the hex private key. Depending on how you join Nostr, your hex key may be given to you at sign up. But, even if it's not, you can always check back-and-forth between nsec and hex keys using a tool like [https://nostrtool.com](https://nostrtool.com) and choosing "Load a privkey from nsec/hex".
 

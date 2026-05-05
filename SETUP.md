@@ -23,24 +23,24 @@ You’ll need some software to run the bridge. Open a terminal (a command line w
 - Update your system:
 
 ```bash
-sudo  apt  update && sudo  apt  upgrade  -y
+sudo apt update && sudo apt upgrade -y
 ```
 
 - Install Node.js (to run the bridge):
 
 ```bash
-curl  -fsSL  https://deb.nodesource.com/setup_18.x  |  sudo  -E  bash  -
-sudo  apt  install  -y  nodejs
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
 ```
 - Install Git (to download the code):
 ```bash
-sudo  apt  install  -y  git
+sudo apt install -y git
 ```
 - Check versions:
 ```bash
-node  -v
-npm  -v
-git  --version
+node -v
+npm -v
+git --version
 ```
 You should see `v18` or higher for Node.js, `8` or higher for npm, and `2` or higher for Git.
 
@@ -48,9 +48,9 @@ You should see `v18` or higher for Node.js, `8` or higher for npm, and `2` or hi
 Get the bridge code from GitHub.
 - Create a folder and download:
 ```bash
-mkdir  ~/hostr
-cd  ~/hostr
-git  clone  https://github.com/crrdlx/hostr.git  .
+mkdir ~/hostr
+cd ~/hostr
+git clone https://github.com/crrdlx/hostr.git .
 ```
 - Check files:
 ```bash
@@ -62,14 +62,14 @@ You should see a `bidirectional-bridge.js`, `bidirectional-longform.js`, `packag
 The bridge needs extra code libraries, which are listed in the `package.json` file.
 - Install all required libraries:
 ```bash
-npm  install
+npm install
 ```
 This automatically downloads libraries like `nostr-tools` and `@hiveio/dhive`, along with other dependencies needed for the bridge. It may take a minute.
 ### 4. Set Up Your Credentials
 The bridge needs your Hive and Nostr account details to post for you.
 - Create a `.env` file. Keep this file private, as it contains sensitive keys!
 ```bash
-nano  .env
+nano .env
 ```
 - Paste this, filling in your details:
 ```
@@ -89,7 +89,7 @@ NOSTR_PRIVATE_KEY=your_nostr_private_key
 - Save: Press `Ctrl+O`, `Enter`, then `Ctrl+X`.
 - Secure the file:
 ```bash
-chmod  600  .env
+chmod 600 .env
 ```
 
 ### 5. Run the Bridge
@@ -101,11 +101,11 @@ If unsure, start with `bidirectional-longform.js` to be safe. See `README.md` fo
 
 - Run your chosen bridge:
 ```bash
-node  bidirectional-longform.js
+node bidirectional-longform.js
 ```
 Or:
 ```bash
-node  bidirectional-bridge.js
+node bidirectional-bridge.js
 ```
 Note, an error might throw about "CommonJS script" and "type": "module". If so, change the file extension to .cjs and start with node bidirectional-bridge.cjs:
 ```
@@ -134,30 +134,30 @@ If tests work, stick with your chosen bridge. Just remember community posting no
 To run the bridge 24/7, use `tmux` (keeps it running even if you close the terminal).
 - Install tmux:
 ```bash
-sudo  apt  install  -y  tmux
+sudo apt install -y tmux
 ```
 - Start a tmux session and start the bridge:
 ```bash
-tmux  new  -s  hostr-bridge
-cd  ~/hostr
-node  bidirectional-longform.js
+tmux new -s hostr-bridge
+cd ~/hostr
+node bidirectional-longform.js
 ```
 Or:
 ```bash
-node  bidirectional-bridge.js
+node bidirectional-bridge.js
 ```
 - Detach (leave bridge running): Press `Ctrl+B`, then `D`.
 - Check current tmux sessions:
-```
+```bash
 tmux ls
 ```
 - Reconnect later:
 ```bash
-tmux  a  -t  hostr-bridge
+tmux a -t hostr-bridge
 ```
 - Stop the bridge:
 ```bash
-tmux  a  -t  hostr-bridge
+tmux a -t hostr-bridge
 # Press Ctrl+C to stop
 # Press Ctrl+B, then D to detach
 ```
