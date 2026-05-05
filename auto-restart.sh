@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# auto-restart.sh v0.1.1
+# auto-restart.sh v0.1.2
 # Auto-restart script for bidirectional-bridge.cjs
 # Monitors the bridge process, restarts it if unresponsive, and displays live bridge logs
 
@@ -83,7 +83,7 @@ start_bridge() {
     log "${BLUE}Starting $SCRIPT_NAME...${NC}"
     
     cd "$SCRIPT_DIR"
-    node "$SCRIPT_NAME" > /dev/null 2>&1 &
+    node "$SCRIPT_NAME" >> "$BRIDGE_LOG" 2>&1 &
     local pid=$!
     
     if [ -n "$pid" ]; then
@@ -201,11 +201,13 @@ case "${1:-monitor}" in
         ;;
 esac
 
-# auto-restart.sh v0.1.1
+# auto-restart.sh v0.1.2
 # Monitors and restarts bidirectional-bridge.cjs if unresponsive
 # Runs process directly in the background without tmux
 # Uses user-writable paths for log and PID files
 # Displays live bridge logs filtered for processing, errors, and listening messages
+# Fix v0.1.2: redirect bridge stdout/stderr to BRIDGE_LOG instead of /dev/null
+#             so health check log-activity detection actually works
 # Features:
 # - Periodic restarts every 6 hours
 # - Health checks every 5 minutes based on PID and log activity

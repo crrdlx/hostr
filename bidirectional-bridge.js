@@ -15,12 +15,12 @@ console.log = (...args) => {
   logStream.write(message + '\n');
   originalConsoleLog(message);
 };
-console.log('Debug: Starting bidirectional-bridge.cjs v0.1.88');
+console.log('Debug: Starting bidirectional-bridge.cjs v0.1.89');
 console.log('Debug: Node.js version:', process.version);
 console.log('Debug: Logging initialized');
 
 // Version constant
-const VERSION = '0.1.88';
+const VERSION = '0.1.89';
 
 // Auto-restart configuration
 const LISTENING_LOG_INTERVAL_MS = 15 * 60 * 1000; // Log "listening" every 15 minutes
@@ -85,8 +85,22 @@ const frontEnds = ['snaps', 'waves'];
 let frontEndIndex = 0;
 const PROCESSED_PERMLINKS_FILE = 'processed_permlinks_shortform.json';
 const PROCESSED_EVENTS_FILE = 'processed_nostr_events_shortform.json';
+const FRONTEND_INDEX_FILE = 'frontend_index.json';
 let processedHivePermlinks = new Set(fs.existsSync(PROCESSED_PERMLINKS_FILE) ? JSON.parse(fs.readFileSync(PROCESSED_PERMLINKS_FILE)) : []);
 let processedNostrEvents = new Set(fs.existsSync(PROCESSED_EVENTS_FILE) ? JSON.parse(fs.readFileSync(PROCESSED_EVENTS_FILE)) : []);
+
+// Load persisted frontEndIndex so alternation survives restarts
+// Even index = snaps, odd index = waves
+if (fs.existsSync(FRONTEND_INDEX_FILE)) {
+  try {
+    const saved = JSON.parse(fs.readFileSync(FRONTEND_INDEX_FILE));
+    frontEndIndex = typeof saved.index === 'number' ? saved.index % frontEnds.length : 0;
+    console.log(`[Bridge] 🔄 Loaded persisted frontEndIndex: ${frontEndIndex} (${frontEnds[frontEndIndex]})`);
+  } catch (e) {
+    console.warn('[Bridge] ⚠️ Could not read frontend_index.json, starting at 0 (snaps)');
+    frontEndIndex = 0;
+  }
+}
 
 // Atomic file write
 function writeJsonFileSync(filePath, data) {
@@ -346,11 +360,17 @@ async function processNostrToHiveQueue() {
           setTimeout(processNostrToHiveQueue, TWO_MINUTES_MS);
           return;
         }
-        // Advance index for next alternation
-        const nextFrontEnd = frontEnds[(frontEndIndex + 1) % frontEnds.length];
+        // Advance index for next alternation and persist so restarts don't reset to snaps
+        const nextFrontEndIndex = (frontEndIndex + 1) % frontEnds.length;
+        const nextFrontEnd = frontEnds[nextFrontEndIndex];
         console.log(`[Bridge] [Nostr→Hive] ℹ️ Posting to: ${frontEnd}. Next will be: ${nextFrontEnd}`);
-        frontEndIndex = (frontEndIndex + 1) % frontEnds.length;
+        frontEndIndex = nextFrontEndIndex;
         lastFrontEnd = frontEnd;
+        try {
+          writeJsonFileSync(FRONTEND_INDEX_FILE, { index: frontEndIndex });
+        } catch (e) {
+          console.warn('[Bridge] ⚠️ Could not persist frontEndIndex:', e.message);
+        }
 
         const result = await postToHive(post.content, post.eventId, containerPermlink, frontEnd);
         processedNostrEvents.add([post.eventId, Date.now()]);
@@ -878,4 +898,4 @@ async function pollHive() {
   setTimeout(pollHive, TWO_MINUTES_MS);
 }
 
-// bidirectional-bridge.cjs v0.1.88 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
+// bidirectional-bridge.cjs v0.1.89 Snaps+Waves+Longform; hive-to-nostr (h2n) goes to nostr as short form (kind 1) truncated notes, no n2h bounceback
